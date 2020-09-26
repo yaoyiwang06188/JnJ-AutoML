@@ -301,7 +301,7 @@ for (prov in providers[1:116]){
 
       #resaving X_train and saving X_validate and y_validate
       X_train <- X[fold != nfolds,]
-      
+      # actual test set for final scoring
       X_validate <- X[fold == nfolds,]
       
       y_validate <- y[fold == nfolds]
@@ -336,6 +336,7 @@ for (prov in providers[1:116]){
       levels(combined_train$y_train) <- c("Class_0", "Class_1")
       
       # create the controller which will be used to train different model types using caret
+      # cross validation
       fitControl <- trainControl(method = "cv",
                                  number = 5,
                                  classProbs = TRUE,
