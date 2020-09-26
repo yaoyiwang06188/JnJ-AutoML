@@ -58,18 +58,20 @@ df_medicare <- df_medicare %>% filter(prvdr_num %in% df_medicare_keep)
 
 ##removing rows that dont have enough positive observations
 #getting lists of hospitals that have at least 10 positive observations for er visit and filter out those that do nott
+#er_90days is either 0 or 1 (boolean)
 er_keep = df_medicare %>% group_by(prvdr_num) %>% summarise(sum_val = sum(er_90days)) %>% filter(sum_val >= 10) %>% pull(prvdr_num)
 df_medicare <- df_medicare %>% filter(prvdr_num %in% er_keep)
 
 
 #getting lists of hospitals that have at least 10 positive observations for mortality and filter out those that do nott
+#mortality_90 is either 0 or 1 (boolean)
 m_keep = df_medicare %>% group_by(prvdr_num) %>% summarise(sum_val = sum(mortality_90)) %>% filter(sum_val >= 10) %>% pull(prvdr_num)
 df_medicare <- df_medicare %>% filter(prvdr_num %in% m_keep)
 
 #getting lists of hospitals that have at least 10 positive observations for readmission and filter out those that do nott
+#readm_flag 90 days is either 0 or 1 (boolean)
 r_keep = df_medicare %>% group_by(prvdr_num) %>% summarise(sum_val = sum(readm_flag)) %>% filter(sum_val >= 10) %>% pull(prvdr_num)
 df_medicare <- df_medicare %>% filter(prvdr_num %in% r_keep)
-
 
 
 # -----------------------------
@@ -137,9 +139,13 @@ df_medicare <- df_medicare %>% mutate(age_interval = cut(age, breaks = c(0,65,70
                                       diagnosis_type = case_when(substr(prncpal_dgns_cd,1,1) == "S" ~ "S",
                                                                  substr(prncpal_dgns_cd,1,1) == "M" ~ "M",
                                                                  TRUE ~ "Other"),
+                                      # index_loss: days in hospital
                                       los_interval = cut(index_los, breaks = c(0,1,2,5,10,20,40,80,160,320)),
+                                      # clm_admsn_dt: first readmit date
                                       month_clm = as.numeric(substr(clm_admsn_dt,6,7)),
+                                      # nch_bene_dschrg_dt: first discharge date for the first readmission
                                       month_dsch = as.numeric(substr(nch_bene_dschrg_dt,6,7)),
+                                      
                                       season_clm = as.factor(case_when(month_clm <= 3 ~ "Winter",
                                                                        month_clm >= 10 ~ "Fall",
                                                                        month_clm > 3 & month_clm < 7 ~ "Spring",
@@ -148,8 +154,10 @@ df_medicare <- df_medicare %>% mutate(age_interval = cut(age, breaks = c(0,65,70
                                                                         month_dsch >= 10 ~ "Fall",
                                                                         month_dsch > 3 & month_dsch < 7 ~ "Spring",
                                                                         TRUE ~ "Summer")),
+                                      # number of days between the first readmit date and the first entry's 1/1/year
                                       time_term_clm = as.numeric(substr(clm_admsn_dt,9,10)) + 
                                         month_clm * 30 + 365 * (yr_adm - min(yr_adm)),
+                                      # number of days between the discharge date of the first readmit date and the first entry's 1/1/year
                                       time_term_dsch = as.numeric(substr(nch_bene_dschrg_dt,9,10)) + 
                                         month_dsch * 30 + 365 * (yr_disch - min(yr_disch)),
 )
@@ -167,7 +175,7 @@ df_medicare$gndr_cd <- df_medicare$gndr_cd %>% as.factor()
 df_medicare$bene_race_cd <- df_medicare$bene_race_cd %>% as.factor()
 
 
-#label variables
+#label variables, target y
 label_variables <- c('mortality_90', 'readm_flag', 'er_90days')
 
 
@@ -229,6 +237,8 @@ for(lab in label_variables_hospital){
   #it leaked target information
   #prvdr_num_target_mapping <- X %>% group_by(prvdr_num) %>%summarise(mean_target= mean(mortality_90))
   #X <- merge(X, prvdr_num_target_mapping, by="prvdr_num")
+  
+  # remove column 'prvdr_num'
   X <- X[, !(colnames(X) %in% c("prvdr_num"))]
   
   #removing labels
@@ -237,9 +247,10 @@ for(lab in label_variables_hospital){
   #form data into folds
   y <- X %>% pull(lab)
   X <- X[,!(names(X) %in% label_variables)]
+  # need to confirm the data type of kfold, whether it will do cross validation 
   fold <- kfold(y, k = nfolds, by = y)
   
-  # Feature Selection based on Boruta Alg
+  # Feature Selection based on Boruta Alg ????????
   X_train_all_features <- X[fold != nfolds,]
   y_train <- y[fold != nfolds]
   boruta_start_time <- Sys.time()
@@ -308,7 +319,7 @@ for(lab in label_variables_hospital){
   results['reglogistic_loss'] <- regLogisticFit$finalModel$tuneValue$loss
   results['reglogistic_cost'] <- regLogisticFit$finalModel$tuneValue$cost
   
-  # predict on validation data
+  # predict on validation data(test data?????)
   reglogistic_prediction <- predict(regLogisticFit,
                                     newdata = X_test, type = "prob")
   reglogistic_y_pred = reglogistic_prediction$Class_1

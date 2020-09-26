@@ -100,16 +100,18 @@ categorical_variables <- c('gndr_cd', 'bene_race_cd', 'provider_type', 'diagnosi
                            'disc_status', 'adm_source', 'age_interval',
                            'clm_drg_cd')
 
-
+#One-hot Encoding
 df_medicare_hospital <- dummy_cols(df_medicare_hospital,select_columns = categorical_variables)
 
-
+#remove original categorical variable
 df_medicare_hospital <- df_medicare_hospital[, !names(df_medicare_hospital) %in% categorical_variables]
 
+#get column mean by 'prvdr_num(hospital ID)'
 df_medicare_hospital <- df_medicare_hospital %>% group_by(prvdr_num) %>% summarise_all(funs(mean), na.rm = TRUE)
 
-
+#hospital X, patient y join by 'prvdr_num'
 df_medicare <- inner_join(df_medicare_patient, df_medicare_hospital)
+
 #cleaning df_complications
 selected_variables_complications <- c("Facility ID", "Measure ID", "Compared to National", "Denominator",
                                       "Score", "Lower Estimate", "Higher Estimate")
@@ -117,10 +119,13 @@ selected_variables_complications <- c("Facility ID", "Measure ID", "Compared to 
 df_complications <- df_complications[,selected_variables_complications]
 
 #Stole this from stack overflow
+# https://community.rstudio.com/t/spread-with-multiple-value-columns/5378
 myspread <- function(df, key, value) {
   # quote key
   keyq <- rlang::enquo(key)
+  
   # break value vector into quotes
+  
   valueq <- rlang::enquo(value)
   s <- rlang::quos(!!valueq)
   df %>% gather(variable, value, !!!s) %>%
@@ -138,6 +143,8 @@ df_complications$`Lower Estimate` <- as.numeric(df_complications$`Lower Estimate
 df_complications$`Higher Estimate` <- as.numeric(df_complications$`Higher Estimate`)
 
 #spreading correct values
+# `Measure ID` = key, c("Compared to National", "Denominator", "Score", "Lower Estimate", "Higher Estimate") = value
+# create new columns: Measure ID_Compared to National,Measure ID_Denominator,....
 df_complications <- df_complications %>% myspread(`Measure ID`, c("Compared to National", "Denominator", "Score", "Lower Estimate", "Higher Estimate"))
 
 #setting values to numeric that are set as character by spread command
