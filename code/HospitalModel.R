@@ -123,6 +123,7 @@ df_medicare[df_medicare == -999] = NA
 
 #creating variables
 df_medicare <- df_medicare %>% mutate(#interval for age. Broken into 5 year intervals and under 65
+                                      # correlation between age and age_interval?????
                                       age_interval = cut(age, breaks = c(0,65,70,75,80,85,90,95,100)),
                                       
                                       #creating a simpler version of diagnosis type
@@ -151,6 +152,7 @@ df_medicare <- df_medicare %>% mutate(#interval for age. Broken into 5 year inte
 )
 
 #removing columns that are no longer relevent
+#rethink the correlation between time_term_clm, time_term_dsch, season_clm, season_dsch
 df_medicare <- df_medicare[, !(colnames(df_medicare) %in% c('clm_admsn_dt', 'nch_bene_dschrg_dt', 'month_clm', 'month_dsch'))]
 
 #setting columns that look numeric that are truly categories as factors
