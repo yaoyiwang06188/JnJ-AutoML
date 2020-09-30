@@ -44,8 +44,8 @@ library(DBI)
 redShiftDriver <- JDBC("com.amazon.redshift.jdbc41.Driver", "RedshiftJDBC41-1.2.8.1005.jar", identifier.quote="`")
 # put Redshift jar file in your home directory
 resultSet <- data.frame()
-username <- "stong2"               ## Set VPCx / Redshift username - this is your J&J userID, for example mine is stong2  
-password <- "#$%@ab32!"            ## Set VPCx / Redshift password - this is the password you got from an encrypted email
+username <- "zfan4"               ## Set VPCx / Redshift username - this is your J&J userID, for example mine is stong2  
+password <- "19A3#a39F7py"            ## Set VPCx / Redshift password - this is the password you got from an encrypted email
 rhealthDBName <- "saf"                ## Set dataset you want to connect to (full list provided here:  https://jnj.sharepoint.com/sites/PHM-GCSP-RND/RWE/Pages/rHEALTH-Database-Connectivity.aspx)
 
 
