@@ -58,8 +58,7 @@ conn <- dbConnect(redShiftDriver, connectionString, username, password)
 
 dbListTables(conn)
 
-res <- dbSendQuery(conn,'select * from saf.scratch_nprabha2saf. xxx') 
-# xxx is the data that you are getting from the scratch space
+res <- dbSendQuery(conn,'select * from saf.scratch_ctsaf2.np_col_hipfx_ads_v9') ## CTSAF2 is my scratch space
 data <- fetch(res,n = -1) 
 
 
