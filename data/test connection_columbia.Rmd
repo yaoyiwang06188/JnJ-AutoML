@@ -1,0 +1,70 @@
+---
+title: "test connection"
+output: html_document
+---
+
+
+```{r}
+#install.packages('RJDBC')
+
+## --------------------------------
+## Sets Java Home
+## --------------------------------
+if (Sys.getenv("JAVA_HOME")!="")  Sys.setenv(JAVA_HOME="")
+
+
+## --------------------------------
+## Loads libraries
+## --------------------------------
+library(rJava)
+options(java.parameters = "-Xmx8048m")
+library(RJDBC)
+library(DBI)
+
+
+## --------------------------------
+## Sets Java Home
+## --------------------------------
+if (Sys.getenv("JAVA_HOME")!="")
+  Sys.setenv(JAVA_HOME="")
+
+
+## --------------------------------
+## Loads libraries
+## --------------------------------
+library(rJava)
+options(java.parameters = "-Xmx8048m")
+library(RJDBC)
+library(DBI)
+
+
+## --------------------------------
+## General Variables
+## --------------------------------
+redShiftDriver <- JDBC("com.amazon.redshift.jdbc41.Driver", "RedshiftJDBC41-1.2.8.1005.jar", identifier.quote="`")
+# put Redshift jar file in your home directory
+resultSet <- data.frame()
+username <- "stong2"               ## Set VPCx / Redshift username - this is your J&J userID, for example mine is stong2  
+password <- "#$%@ab32!"            ## Set VPCx / Redshift password - this is the password you got from an encrypted email
+rhealthDBName <- "saf"                ## Set dataset you want to connect to (full list provided here:  https://jnj.sharepoint.com/sites/PHM-GCSP-RND/RWE/Pages/rHEALTH-Database-Connectivity.aspx)
+
+
+## --------------------------------
+## Connection (do not change)
+## --------------------------------
+connectionString <- paste("jdbc:redshift://rhealth-prod-4.cldcoxyrkflo.us-east-1.redshift.amazonaws.com:5439/", rhealthDBName,"?ssl=true&sslfactory=com.amazon.redshift.ssl.NonValidatingFactory", sep="")
+conn <- dbConnect(redShiftDriver, connectionString, username, password)
+
+
+dbListTables(conn)
+
+res <- dbSendQuery(conn,'select * from saf.scratch_nprabha2saf. xxx') 
+# xxx is the data that you are getting from the scratch space
+data <- fetch(res,n = -1) 
+
+
+```
+
+
+
+
