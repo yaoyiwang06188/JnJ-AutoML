@@ -1,0 +1,252 @@
+---
+title: "data analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr) 
+```
+
+## Load Data
+
+```{r}
+#install.packages('RJDBC')
+## --------------------------------
+## Sets Java Home
+## --------------------------------
+if (Sys.getenv("JAVA_HOME")!="")  Sys.setenv(JAVA_HOME="")
+## --------------------------------
+## Loads libraries
+## --------------------------------
+library(rJava)
+options(java.parameters = "-Xmx8048m")
+library(RJDBC)
+library(DBI)
+## --------------------------------
+## Sets Java Home
+## --------------------------------
+if (Sys.getenv("JAVA_HOME")!="")
+  Sys.setenv(JAVA_HOME="")
+## --------------------------------
+## Loads libraries
+## --------------------------------
+library(rJava)
+options(java.parameters = "-Xmx8048m")
+library(RJDBC)
+library(DBI)
+## --------------------------------
+## General Variables
+## --------------------------------
+redShiftDriver <- JDBC("com.amazon.redshift.jdbc41.Driver", "RedshiftJDBC41-1.2.8.1005.jar", identifier.quote="`")
+# put Redshift jar file in your home directory
+resultSet <- data.frame()
+username <- "zfan4"               ## Set VPCx / Redshift username - this is your J&J userID, for example mine is stong2  
+password <- "19A3#a39F7py"            ## Set VPCx / Redshift password - this is the password you got from an encrypted email
+rhealthDBName <- "saf"                ## Set dataset you want to connect to (full list provided here:  https://jnj.sharepoint.com/sites/PHM-GCSP-RND/RWE/Pages/rHEALTH-Database-Connectivity.aspx)
+## --------------------------------
+## Connection (do not change)
+## --------------------------------
+connectionString <- paste("jdbc:redshift://rhealth-prod-4.cldcoxyrkflo.us-east-1.redshift.amazonaws.com:5439/", rhealthDBName,"?ssl=true&sslfactory=com.amazon.redshift.ssl.NonValidatingFactory", sep="")
+conn <- dbConnect(redShiftDriver, connectionString, username, password)
+dbListTables(conn)
+res <- dbSendQuery(conn,'select * from saf.scratch_ctsaf2.np_col_hipfx_ads_v9') ## CTSAF2 is my scratch space
+data <- fetch(res,n = -1) 
+```
+
+The original data frame has 439248 observations, 247 variables.
+
+```{r}
+dim(data)
+```
+
+
+
+## Target Variables
+
+**mortality_90** is a 0/1 flag indicating whether the patient died within 90 days post index discharge.
+For the mortality, we have 380213 patients who are alive. 
+```{r}
+mean(data$mortality_90)
+length(data$mortality_90)-sum(data$mortality_90)
+```
+
+**readm_flag** is a 0/1 flag indicating whether the patient was readmitted within 90 days post index discharge.   
+For the readmission, we have 342935 patients who are not readmitted. 
+
+```{r}
+mean(data$readm_flag)
+length(data$readm_flag)-sum(data$readm_flag)
+```
+
+**er_90days** is a 0/1 flag indicating ER visit within 90 days post index discharge.  
+For the ER visit, we have 353680 patients who are not visited ER. 
+```{r}
+mean(data$er_90days)
+length(data$er_90days)-sum(data$er_90days)
+```
+
+
+## Data About Patients
+
+**Age**:
+```{r}
+summary(data$age)
+ggplot(data, aes(x=age)) + 
+  geom_histogram(binwidth = 5)
+```
+
+**gender**:
+There is no unknown data in gender. 1 is male, 2 is female.
+```{r}
+sum(data$gndr_cd != 0)
+ggplot(data, aes(x = gndr_cd)) +  
+  geom_bar(aes(y = (..count..)/sum(..count..)))
+```
+
+**race**:
+1 is white.
+
+```{r}
+ggplot(data, aes(x = bene_race_cd)) +  
+  geom_bar(aes(y = (..count..)/sum(..count..))) 
+```
+##Important Features
+
+```{r}
+#creating variables
+data_new <- data %>% mutate(#interval for age. Broken into 5 year intervals and under 65
+                                      # correlation between age and age_interval?????
+                                      age_interval = cut(age, breaks = c(0,65,70,75,80,85,90,95,100)),
+                                      
+                                      #creating a simpler version of diagnosis type
+                                      diagnosis_type = case_when(substr(prncpal_dgns_cd,1,1) == "S" ~ "S",
+                                                                 substr(prncpal_dgns_cd,1,1) == "M" ~ "M",
+                                                                 TRUE ~ "Other"),
+                                      
+                                      #creating interval variable for length of stay
+                                      
+                                      
+                                      los_interval = cut(index_los, breaks = c(0,1,2,5,10,20,40,80,160,320)),
+                                      
+                                      #making time series terms from dates
+                                      
+                                      #Index admission date
+                                      month_clm = as.numeric(substr(clm_admsn_dt,6,7)),
+                                      
+                                      #Index discharge date
+                                      month_dsch = as.numeric(substr(nch_bene_dschrg_dt,6,7)),
+                                      
+                                      
+                                      season_clm = as.factor(case_when(month_clm <= 3 ~ "Winter",
+                                                                       month_clm >= 10 ~ "Fall",
+                                                                       month_clm > 3 & month_clm < 7 ~ "Spring",
+                                                                       TRUE ~ "Summer")),
+                                      
+                                      
+                                      season_dsch = as.factor(case_when(month_dsch <= 3 ~ "Winter",
+                                                                        month_dsch >= 10 ~ "Fall",
+                                                                        month_dsch > 3 & month_dsch < 7 ~ "Spring",
+                                                                        TRUE ~ "Summer")),
+                                      
+                                      time_term_clm = as.numeric(substr(clm_admsn_dt,9,10)) + 
+                                        month_clm * 30 + 365 * (yr_adm - min(yr_adm)),
+                                      
+                                      time_term_dsch = as.numeric(substr(nch_bene_dschrg_dt,9,10)) + 
+                                        month_dsch * 30 + 365 * (yr_disch - min(yr_disch))
+)
+```
+
+
+```{r}
+summary(data_new$time_term_dsch  - data_new$time_term_clm)
+ggplot(data_new, aes(x=time_term_dsch  - time_term_clm)) + 
+  geom_histogram(binwidth = 5)
+```
+```{r}
+summary(data$index_los)
+ggplot(data, aes(x=index_los)) + 
+  geom_histogram(binwidth = 5)
+```
+
+**clm_utlztn_day_cnt**:  
+On an institutional claim, the number of covered days of care that are chargeable to Medicare facility utilization that includes full days, coinsurance days, and lifetime reserve days. It excludes any days classified as non-covered, leave of absence days, and the day of discharge or death.
+```{r}
+summary(data$clm_utlztn_day_cnt)
+```
+**clm_pps_cptl_drg_wt_num**:  
+DRG weight
+```{r}
+unique(data$clm_pps_cptl_drg_wt_num)
+```
+
+
+**re_clm_pmt_amt**:  
+Claim payment amount of the 1st readmission episode
+```{r}
+summary(data$re_clm_pmt_amt)
+```
+**disc_status**:  
+Discharge status from index episode
+```{r}
+ggplot(data, aes(x = disc_status)) +  
+  geom_bar(aes(y = (..count..)/sum(..count..))) 
+```
+
+
+## Entries of scores
+
+cci_score_1825_days_b is **CCI score**: quantifies an individual’s burden of disease and corresponding 1-year mortality risk.
+
+```{r}
+length(unique(data$cci_score_1825_days_b))
+unique(data$cci_score_1825_days_b)
+```
+elix_score_1825_days_b is **Elixhauser Score**: A method for measuring patient comorbidity based on ICD-9-CM and ICD-10 diagnosis codes found in administrative data.
+
+```{r}
+length(unique(data$elix_score_1825_days_b))
+unique(data$elix_score_1825_days_b)
+```
+fci_score_1825_days_b is **FCI Score**: is calculated by looking at the ratio of the required renewal cost of the current year to the current building replacement value
+
+```{r}
+length(unique(data$fci_score_1825_days_b))
+unique(data$fci_score_1825_days_b)
+```
+
+## Empty Characters
+
+at_physn_upin: NPIs replaced UPINs as the standard provider identifiers beginning in 2007. The UPIN is almost never populated after 2009.
+
+NPI: On an institutional claim, the national provider identifier (NPI) number assigned to uniquely identify the physician who has overall responsibility for the beneficiary's care and treatment.
+
+
+```{r}
+unique(data$at_physn_upin)
+unique(data$op_physn_upin)
+```
+
+
+## Intresting Variables
+
+cont_enroll_flag_1825b_89f is a 0/1 flag indicating that the patient is continuously enrolled for 1825 days in baseline and 90 days in follow-up. All entries is '1'.
+
+```{r}
+mean(data$cont_enroll_flag_1825b_89f)
+```
+
+hmo_enroll_flag_1825b_89f is a 0/1 flag indicating that the patient is continuously enrolled with HMO for 1825 days in baseline and 90 days in follow-up. All entries is '0'.
+
+```{r}
+mean(data$hmo_enroll_flag_1825b_89f)
+```
+These variables has variance 0. 
+
+```{r}
+summary(data$re_clm_pmt_amt)
+```
