@@ -43,8 +43,8 @@ res <- dbSendQuery(conn,'select * from scratch_col_hipfx_saf.np_col_hipfx_ads_v9
 # 
 # 
 # #Loading Data
-
-df_medicare <- fetch(res,n = -1) 
+df_medicare <- data
+# df_medicare <- fetch(res,n = -1) 
 
 #removing hospitals that will be removed from hospital model
 

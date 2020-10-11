@@ -10,11 +10,13 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(ggplot2)
 library(dplyr) 
+library(ggmosaic)
+library(vcd)
 ```
 
 ## Load Data
 
-```{r}
+```{r include=FALSE}
 #install.packages('RJDBC')
 ## --------------------------------
 ## Sets Java Home
@@ -64,7 +66,59 @@ The original data frame has 439248 observations, 247 variables.
 dim(data)
 ```
 
+## Hospital Level
 
+Group the data by hospital
+```{r}
+data_hos <- data %>% group_by(prvdr_num) %>% summarise(total_num = length(prvdr_num),
+                                                       mor_num = sum(mortality_90),
+                                                       re_num = sum(readm_flag),
+                                                       er_num = sum(er_90days))
+```
+```{r}
+dim(data_hos)[1]
+```
+There are 3378 hospitals in total. 
+
+```{r}
+ggplot(data_hos, aes(x=total_num)) + 
+  geom_histogram(binwidth = 10) +
+  labs(title="Histogram of total number of observations",
+        x ="Number of Observations per Hospital", y = "count")
+```
+
+```{r}
+data_hos$mor_rate = data_hos$mor_num/data_hos$total_num
+data_hos$re_rate = data_hos$re_num/data_hos$total_num
+data_hos$er_rate = data_hos$er_num/data_hos$total_num
+```
+
+```{r}
+ggplot(data_hos, aes(x=mor_rate)) + 
+  geom_histogram(binwidth = 0.02) +
+  geom_vline(xintercept = mean(data$mortality_90),
+                color = "red", size=1.5) +
+  labs(title="Histogram of mortality rate of each hospital",
+        x ="mortality rate", y = "Number of Hospital")
+```
+
+```{r}
+ggplot(data_hos, aes(x=re_rate)) + 
+  geom_histogram(binwidth = 0.02) +
+  geom_vline(xintercept = mean(data$readm_flag),
+                color = "red", size=1.5) +
+  labs(title="Histogram of readmit rate of each hospital",
+        x ="readmit rate", y = "Number of Hospital")
+```
+
+```{r}
+ggplot(data_hos, aes(x=er_rate)) + 
+  geom_histogram(binwidth = 0.02) +
+  geom_vline(xintercept = mean(data$er_90days),
+                color = "red", size=1.5) +
+  labs(title="Histogram of er visit rate of each hospital",
+        x ="er visit rate", y = "Number of Hospital")
+```
 
 ## Target Variables
 
@@ -97,7 +151,9 @@ length(data$er_90days)-sum(data$er_90days)
 ```{r}
 summary(data$age)
 ggplot(data, aes(x=age)) + 
-  geom_histogram(binwidth = 5)
+  labs(title="Histogram of age",
+        x ="age", y = "Count") +
+  geom_histogram(binwidth = 3)
 ```
 
 **gender**:
@@ -105,7 +161,9 @@ There is no unknown data in gender. 1 is male, 2 is female.
 ```{r}
 sum(data$gndr_cd != 0)
 ggplot(data, aes(x = gndr_cd)) +  
-  geom_bar(aes(y = (..count..)/sum(..count..)))
+  geom_bar(aes(y = (..count..)/sum(..count..))) +
+  labs(title="Gender",
+        x ="gender", y = "Proportion")
 ```
 
 **race**:
@@ -113,8 +171,34 @@ ggplot(data, aes(x = gndr_cd)) +
 
 ```{r}
 ggplot(data, aes(x = bene_race_cd)) +  
-  geom_bar(aes(y = (..count..)/sum(..count..))) 
+  geom_bar(aes(y = (..count..)/sum(..count..))) +
+  labs(title="Race",
+        x ="Race", y = "Proportion")
 ```
+
+```{r}
+vcd::mosaic(Favorite ~ Age + Music, 
+       labeling = vcd::labeling_border(
+         abbreviate_labs = c(3, 10, 6),
+         rot_labels=c(0,0,-45)
+       ),
+       direction=c('v','v','h'), # Age = Vertical, Music = Vertical, Favoriate = Horizonal (a.k.a DoubleDecker)
+       gp = grid::gpar(fill=c('lightblue', 'gray')),
+       df)
+```
+
+```{r}
+vcd::mosaic(gndr_cd ~ bene_race_cd, data)
+```
+
+```{r}
+ggplot(data = data)+ 
+  geom_mosaic(aes(x = product(gndr_cd, bene_race_cd), fill = bene_race_cd))+
+  labs(x = "Race", y = "Gender",title = "Mosaic Plot of gender and race")
+# +
+#   theme(plot.title = element_text(hjust = 0.5))
+```
+
 ##Important Features
 
 ```{r}

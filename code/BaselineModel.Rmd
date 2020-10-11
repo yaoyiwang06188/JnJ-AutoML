@@ -1,0 +1,103 @@
+---
+title: "baselineModel"
+output: html_document
+---
+```{r}
+library(dplyr)
+```
+
+
+```{r}
+#install.packages('RJDBC')
+
+## --------------------------------
+## Sets Java Home
+## --------------------------------
+if (Sys.getenv("JAVA_HOME")!="")  Sys.setenv(JAVA_HOME="")
+
+
+## --------------------------------
+## Loads libraries
+## --------------------------------
+library(rJava)
+options(java.parameters = "-Xmx8048m")
+library(RJDBC)
+library(DBI)
+
+
+## --------------------------------
+## Sets Java Home
+## --------------------------------
+if (Sys.getenv("JAVA_HOME")!="")
+  Sys.setenv(JAVA_HOME="")
+
+
+## --------------------------------
+## Loads libraries
+## --------------------------------
+library(rJava)
+options(java.parameters = "-Xmx8048m")
+library(RJDBC)
+library(DBI)
+
+
+## --------------------------------
+## General Variables
+## --------------------------------
+redShiftDriver <- JDBC("com.amazon.redshift.jdbc41.Driver", "RedshiftJDBC41-1.2.8.1005.jar", identifier.quote="`")
+# put Redshift jar file in your home directory
+resultSet <- data.frame()
+username <- "zfan4"               ## Set VPCx / Redshift username - this is your J&J userID, for example mine is stong2  
+password <- "19A3#a39F7py"            ## Set VPCx / Redshift password - this is the password you got from an encrypted email
+rhealthDBName <- "saf"                ## Set dataset you want to connect to (full list provided here:  https://jnj.sharepoint.com/sites/PHM-GCSP-RND/RWE/Pages/rHEALTH-Database-Connectivity.aspx)
+
+
+## --------------------------------
+## Connection (do not change)
+## --------------------------------
+connectionString <- paste("jdbc:redshift://rhealth-prod-4.cldcoxyrkflo.us-east-1.redshift.amazonaws.com:5439/", rhealthDBName,"?ssl=true&sslfactory=com.amazon.redshift.ssl.NonValidatingFactory", sep="")
+conn <- dbConnect(redShiftDriver, connectionString, username, password)
+
+
+# dbListTables(conn)
+
+res <- dbSendQuery(conn,'select * from saf.scratch_ctsaf2.np_col_hipfx_ads_v9') ## CTSAF2 is my scratch space
+data <- fetch(res,n = -1) 
+
+```
+
+```{r}
+df_medicare <- data
+dim(df_medicare)
+```
+
+Remove target information
+```{r}
+columns_having_target_info <- c('readm_flag', 'mortality_90', 'er_90days','mortality_365', 'readm_flag_365', 'er_365days', 're_claim_no',  're_clm_admsn_dt', 're_nch_bene_dschrg_dt','re_prvdr_num', 're_clm_utlztn_day_cnt', 're_clm_pmt_amt', 're_pdx', 're_ppx', 're_adm_source', 're_disc_status', 're_pdx_desc', 're_ppx_desc', 're_clm_admsn_dt_365', 're_nch_bene_dschrg_dt_365', 're_prvdr_num_365', 're_clm_utlztn_day_cnt_365', 're_clm_pmt_amt_365', 're_pdx_365', 're_ppx_365', 're_adm_source_365', 're_claim_no_365', 're_disc_status_365', 're_pdx_desc_365', 're_ppx_desc_365', 're_claim_no_365_up', 'readm_flag_365_up', 're_clm_admsn_dt_365_up', 're_nch_bene_dschrg_dt_365_up', 're_prvdr_num_365_up', 're_clm_utlztn_day_cnt_365_up', 're_clm_pmt_amt_365_up', 're_pdx_365_up', 're_ppx_365_up', 're_adm_source_365_up', 're_disc_status_365_up', 're_pdx_desc_365_up', 're_ppx_desc_365_up', 'er_claim_no_365', 'er_rev_cntr_dt_365', 'er_clm_thru_dt_365', 'er_prncpal_dgns_cd_365', 'er_pdx_desc_365', 'er_hcpcs_cd_365', 'er_hcpcs_desc_365', 'mortality_365_up', 'er_365days_up', 'er_claim_no_365_up', 'er_rev_cntr_dt_365_up', 'er_clm_thru_dt_365_up', 'er_prncpal_dgns_cd_365_up', 'er_pdx_desc_365_up', 'er_hcpcs_cd_365_up', 'er_hcpcs_desc_365_up'
+)
+df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_having_target_info)]
+```
+
+Remove collinear features
+```{r}
+columns_having_collinearity <- c('cci_score_1825_days_b','elix_score_1825_days_b',  'fci_score_1825_days_b', 'follow_up_end_dt', 'follow_up_end_dt_365')
+
+df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_having_collinearity)]
+```
+
+Remove features same entry and unique entry
+```{r}
+columns_no_variance <- c('version_id', 'cont_enroll_flag_1825b_89f', 'valid_date_of_death_1825b_89f', 'hmo_enroll_flag_1825b_89f', 'hmo_enroll_flag_365f','cont_enroll_flag_365f','at_physn_upin', 'op_physn_upin', 'ot_physn_upin')
+
+columns_unique <- c('desy_sort_key', 'claim_no', 'ot_physn_npi','at_physn_npi','op_physn_npi')
+
+df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_no_variance)]
+
+df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_unique)]
+```
+
+Remove missing value
+```{r}
+df_medicare <- df_medicare[,df_medicare %>% is.na() %>% colSums() == 0]
+```
+
