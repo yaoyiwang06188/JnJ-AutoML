@@ -107,7 +107,7 @@ ggplot(data_hos, aes(x=re_rate)) +
   geom_histogram(binwidth = 0.02) +
   geom_vline(xintercept = mean(data$readm_flag),
                 color = "red", size=1.5) +
-  labs(title="Histogram of readmit rate of each hospital",
+  labs(title="Histogram of readmission rate of each hospital",
         x ="readmit rate", y = "Number of Hospital")
 ```
 
@@ -116,7 +116,7 @@ ggplot(data_hos, aes(x=er_rate)) +
   geom_histogram(binwidth = 0.02) +
   geom_vline(xintercept = mean(data$er_90days),
                 color = "red", size=1.5) +
-  labs(title="Histogram of er visit rate of each hospital",
+  labs(title="Histogram of emergency room visit rate of each hospital",
         x ="er visit rate", y = "Number of Hospital")
 ```
 

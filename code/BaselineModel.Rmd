@@ -3,7 +3,17 @@ title: "baselineModel"
 output: html_document
 ---
 ```{r}
+library(ggplot2)
+library(tidyverse)
+library(stringr)
+library(GGally)
+library(parcoords)
+library(tidyr)
+library(r2d3)
 library(dplyr)
+library(readr)
+library(gridExtra)
+library(plotly)
 ```
 
 
@@ -80,7 +90,7 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_having_target_
 
 Remove collinear features
 ```{r}
-columns_having_collinearity <- c('cci_score_1825_days_b','elix_score_1825_days_b',  'fci_score_1825_days_b', 'follow_up_end_dt', 'follow_up_end_dt_365')
+columns_having_collinearity <- c('cci_score_1825_days_b','elix_score_1825_days_b',  'fci_score_1825_days_b', 'follow_up_end_dt', 'follow_up_end_dt_365','ppx_desc', 'pdx_desc')
 
 df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_having_collinearity)]
 ```
@@ -98,6 +108,20 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_unique)]
 
 Remove missing value
 ```{r}
+visna(gun_vio,sort="b")
+res <- colSums(is.na(df_medicare))
+
 df_medicare <- df_medicare[,df_medicare %>% is.na() %>% colSums() == 0]
+```
+
+Remove columns leaking hospital information
+```{r}
+columns_hospital_info <- c('fci_arthritis_1825_days_b', 'fci_osteoporosis_1825_days_b', 'fci_asthma_1825_days_b', 'fci_copd_1825_days_b', 'fci_angina_1825_days_b', 'fci_cong_heart_fail_1825_days_b', 'fci_heart_attack_1825_days_b', 'fci_neur_dis_1825_days_b', 'fci_stroke_1825_days_b', 'fci_diabetes_1825_days_b', 'fci_perif_vasc_dis_1825_days_b', 'fci_upper_gi_1825_days_b', 'fci_depression_1825_days_b', 'fci_anxiety_panic_1825_days_b', 'fci_visual_imp_1825_days_b', 'fci_hear_imp_1825_days_b', 'fci_ddd_1825_days_b', 'fci_obesity_1825_days_b', 
+'prvdr_state_cd', 'prov_vol_annual', 'prov_vol_per_month', 'prvdr_home_hha_vol', 'prvdr_home_hha_vol_month', 'prvdr_home_hha_vol_per', 'phy_vol_annual', 'phy_vol_month', 'op_phy_cum_exp', 'provider_type', 'hospital_name', 'prvdr_ssa_county_code', 'prvdr_urgeo', 'prvdr_urspa', 'prvdr_wi', 'prvdr_cola', 'prvdr_resident_to_bed_ratio', 'prvdr_rday', 'prvdr_beds', 'prvdr_dshpct', 'prvdr_dshopg', 'prvdr_dshcpg', 'prvdr_state_name', 'prvdr_state_ab', 'prvdr_div_code', 'prvdr_division', 'prvdr_region_cd', 'prvdr_region','county', 'bpci_lejr', 'cjr', 'bpci_ami_cabg', 'ami_cabg', 'prvdr_cbsa', 'prvdr_cbsa_desc', 'prvdr_msa', 'prvdr_msa_desc', 'prvdr_teaching_status', 'low_income_subsidy', 'prior_inp_only_los', 'prior_irf_los', 'prior_ltcf_los', 'prior_snf_los', 'prior_hha_visits', 'prior_out_visits', 'total_prior_los', 'poverty_per', 'grp_1', 'grp_2', 'grp_3', 'grp_4', 'grp_5', 'grp_6', 'grp_7', 'grp_8', 'grp_9', 'grp_10', 'unemp_percentage', 'no_of_snfs', 'ma_pen_percent', 'snf_per_capita')
+
+
+df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_hospital_info)]
+
+
 ```
 
