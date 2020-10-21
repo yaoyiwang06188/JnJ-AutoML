@@ -132,58 +132,42 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_hospital_info)
 # -----------------
 
 population_sample <- df_medicare %>% group_by(prvdr_state_name) %>% sample_n(as.integer(ceiling(length(prvdr_state_name)/20)))
-test <- population_sample %>% group_by(prvdr_state_name) %>% summarise( length(prvdr_state_name) )
 ```
+Plot the distribution of each state
+```{r,fig.height=6.5}
 
-```{r}
 # to obtain summary based on provider's state
-df_medicare_state <- df_medicare %>% group_by(prvdr_state_name) %>% summarise(number = length(prvdr_state_name), sample = as.integer(length(prvdr_state_name)/20) )
-```
-```{r}
-ggplot(data=df_medicare_state, aes(x = reorder(prvdr_state_name, -number), y=number)) +
-  geom_bar(stat="identity", fill="steelblue") +
+df_medicare_state <- df_medicare %>% group_by(prvdr_state_name) %>% summarise(number = length(prvdr_state_name),type = "population" )
+
+test_state <- population_sample %>% group_by(prvdr_state_name) %>% summarise(number =  length(prvdr_state_name),type = "sample" )
+
+df_medicare_state <- rbind(df_medicare_state,test_state)
+
+ggplot(data=df_medicare_state, aes(x = reorder(prvdr_state_name,number), y=log(number)))+
+  geom_bar(stat="identity",fill = "steelblue") +
   coord_flip() +
   xlab('state')+ 
-  ylab('number of patients') +
-
-  
-  # theme(axis.text.x = element_text(angle = 60, vjust = 0.2, hjust=0.1))
+  ylab('number of patients(log)') +
+  facet_wrap(~ type) + 
   theme_minimal()
 ```
+plot for different hospital
 ```{r}
-ggplot(data=test, aes(x = reorder(prvdr_state_name, -sample_size), y=sample_size)) +
-  geom_bar(stat="identity", fill="steelblue") +
-  coord_flip() +
-  xlab('state')+ 
-  ylab('sample size') +
 
-  
-  # theme(axis.text.x = element_text(angle = 60, vjust = 0.2, hjust=0.1))
-  theme_minimal()
-```
+df_medicare_hos <- df_medicare %>% group_by(provider_type) %>% summarise(number = length(provider_type), type = "population" )
 
-```{r}
-df_medicare_hos <- df_medicare %>% group_by(provider_type) %>% summarise(number = length(provider_type), sample = as.integer(length(provider_type)/20) )
+test_hos <- population_sample %>% group_by(provider_type) %>% summarise(number =  length(provider_type),type = "sample" )
 
-ggplot(data=df_medicare_hos, aes(x = reorder(provider_type, -number), y=number)) +
+df_medicare_hos <- rbind(df_medicare_hos,test_hos)
+
+ggplot(data=df_medicare_hos, aes(x = reorder(provider_type, number), y=log(number))) +
   geom_bar(stat="identity", fill="steelblue") +
   coord_flip() +
   xlab('Hospital type')+ 
-  ylab('number of patients') +
-  theme_minimal()
+  ylab('number of patients(log)') +
+  theme_minimal() +
+  facet_wrap( ~ type)
 ```
-
-```{r}
-test <- population_sample %>% group_by(provider_type) %>% summarise(sample_size = length(provider_type) )
-
-ggplot(data=test, aes(x = reorder(provider_type, -sample_size), y=sample_size)) +
-  geom_bar(stat="identity", fill="steelblue") +
-  coord_flip() +
-  xlab('hospital type')+ 
-  ylab('Sample size') +
-  theme_minimal()
-```
-
 
 ```{r}
 # ----------------- 
