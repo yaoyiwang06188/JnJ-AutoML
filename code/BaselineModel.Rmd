@@ -162,7 +162,7 @@ df_medicare_hos <- rbind(df_medicare_hos,test_hos)
 
 ggplot(data=df_medicare_hos, aes(x = reorder(provider_type, number), y=log(number))) +
   geom_bar(stat="identity", fill="steelblue") +
-  geom_text(aes(label=number), vjust=2, color="black",
+  geom_text(aes(label=number), hjust=0.9, color="black",
             position = position_dodge(0.9), size=4)+
   coord_flip() +
   xlab('Hospital type')+ 
