@@ -14,6 +14,9 @@ library(dplyr)
 library(readr)
 library(gridExtra)
 library(plotly)
+library(ade4)
+library(data.table)
+library(caret)
 ```
 
 
@@ -83,8 +86,9 @@ dim(df_medicare)
 
 Remove target information
 ```{r}
-columns_having_target_info <- c('mortality_365', 'readm_flag_365', 'er_365days', 're_claim_no',  're_clm_admsn_dt', 're_nch_bene_dschrg_dt','re_prvdr_num', 're_clm_utlztn_day_cnt', 're_clm_pmt_amt', 're_pdx', 're_ppx', 're_adm_source', 're_disc_status', 're_pdx_desc', 're_ppx_desc', 're_clm_admsn_dt_365', 're_nch_bene_dschrg_dt_365', 're_prvdr_num_365', 're_clm_utlztn_day_cnt_365', 're_clm_pmt_amt_365', 're_pdx_365', 're_ppx_365', 're_adm_source_365', 're_claim_no_365', 're_disc_status_365', 're_pdx_desc_365', 're_ppx_desc_365', 're_claim_no_365_up', 'readm_flag_365_up', 're_clm_admsn_dt_365_up', 're_nch_bene_dschrg_dt_365_up', 're_prvdr_num_365_up', 're_clm_utlztn_day_cnt_365_up', 're_clm_pmt_amt_365_up', 're_pdx_365_up', 're_ppx_365_up', 're_adm_source_365_up', 're_disc_status_365_up', 're_pdx_desc_365_up', 're_ppx_desc_365_up', 'er_claim_no_365', 'er_rev_cntr_dt_365', 'er_clm_thru_dt_365', 'er_prncpal_dgns_cd_365', 'er_pdx_desc_365', 'er_hcpcs_cd_365', 'er_hcpcs_desc_365', 'mortality_365_up', 'er_365days_up', 'er_claim_no_365_up', 'er_rev_cntr_dt_365_up', 'er_clm_thru_dt_365_up', 'er_prncpal_dgns_cd_365_up', 'er_pdx_desc_365_up', 'er_hcpcs_cd_365_up', 'er_hcpcs_desc_365_up'
-)
+columns_having_target_info <- c('mortality_365', 'readm_flag_365', 'er_365days', 're_claim_no',  're_clm_admsn_dt', 're_nch_bene_dschrg_dt','re_prvdr_num', 're_clm_utlztn_day_cnt', 're_clm_pmt_amt', 're_pdx', 're_ppx', 're_adm_source', 're_disc_status', 're_pdx_desc', 're_ppx_desc', 're_clm_admsn_dt_365', 're_nch_bene_dschrg_dt_365', 're_prvdr_num_365', 're_clm_utlztn_day_cnt_365', 're_clm_pmt_amt_365', 're_pdx_365', 're_ppx_365', 're_adm_source_365', 're_claim_no_365', 're_disc_status_365', 're_pdx_desc_365', 're_ppx_desc_365', 're_claim_no_365_up', 'readm_flag_365_up', 're_clm_admsn_dt_365_up', 're_nch_bene_dschrg_dt_365_up', 're_prvdr_num_365_up', 're_clm_utlztn_day_cnt_365_up', 're_clm_pmt_amt_365_up', 're_pdx_365_up', 're_ppx_365_up', 're_adm_source_365_up', 're_disc_status_365_up', 're_pdx_desc_365_up', 're_ppx_desc_365_up', 'er_claim_no_365', 'er_rev_cntr_dt_365', 'er_clm_thru_dt_365', 'er_prncpal_dgns_cd_365', 'er_pdx_desc_365', 'er_hcpcs_cd_365', 'er_hcpcs_desc_365', 'mortality_365_up', 'er_365days_up', 'er_claim_no_365_up', 'er_rev_cntr_dt_365_up', 'er_clm_thru_dt_365_up', 'er_prncpal_dgns_cd_365_up', 'er_pdx_desc_365_up', 'er_hcpcs_cd_365_up', 'er_hcpcs_desc_365_up','er_claim_no', 'er_rev_cntr_dt', 'er_clm_thru_dt','er_prncpal_dgns_cd','er_pdx_desc', 'er_hcpcs_cd', 'er_hcpcs_desc')
+
+
 df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_having_target_info)]
 ```
 
@@ -93,6 +97,13 @@ Remove collinear features
 columns_having_collinearity <- c('cci_score_1825_days_b','elix_score_1825_days_b',  'fci_score_1825_days_b', 'follow_up_end_dt', 'follow_up_end_dt_365','ppx_desc', 'pdx_desc')
 
 df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_having_collinearity)]
+
+hos_num <- df_medicare$prvdr_num
+
+add_colinear <- c('prvdr_num','fy','yr_adm','yr_disch','prvdr_state_name','prvdr_state_cd','prvdr_ssa_county_code','prov_vol_per_month','prvdr_home_hha_vol_month','prvdr_home_hha_vol_per','phy_vol_month','prvdr_urspa','prvdr_cbsa','prvdr_cbsa_desc','prvdr_msa','prvdr_msa_desc')
+df_medicare <- df_medicare[, !(colnames(df_medicare) %in% add_colinear)]
+
+
 ```
 
 Remove features same entry and unique entry
@@ -108,7 +119,16 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_unique)]
 
 Remove missing value
 ```{r}
-df_medicare <- df_medicare[,df_medicare %>% is.na() %>% colSums() == 0]
+# remove columns with missing value
+# df_medicare <- df_medicare[,df_medicare %>% is.na() %>% colSums() == 0]
+
+# remove rows with missing value
+df_medicare[df_medicare == -999] <- NA
+df_medicare[df_medicare == 'NA'] <- NA
+df_medicare <- df_medicare %>% drop_na(hospital_name,prvdr_teaching_status,ma_pen_percent,prvdr_rday,ami_cabg)
+# df_medicare <- df_medicare[df_medicare %>% is.na() %>% rowSums() == 0,]
+# t <- colSums(is.na(df_medicare))
+# t[t!=0]
 ```
 
 Remove columns leaking hospital information
@@ -131,19 +151,65 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_hospital_info)
 #Population Sampling
 # -----------------
 
-population_sample <- df_medicare %>% group_by(prvdr_state_name) %>% sample_n(as.integer(ceiling(length(prvdr_state_name)/20)))
+population_sample <- df_medicare %>% group_by(prvdr_state_ab) %>% sample_n(as.integer(ceiling(length(prvdr_state_ab)/20)))
 ```
+
+```{r}
+# -------------------
+# feature engineering
+# -------------------
+
+# convert variable to date feature 
+population_sample$nch_bene_dschrg_dt = as.Date(population_sample$nch_bene_dschrg_dt)
+population_sample$clm_admsn_dt = as.Date(population_sample$clm_admsn_dt)
+
+# standardize all numeric column
+# population_sample=population_sample %>% mutate_if(is.numeric, scale)
+
+# one hot encoder
+# df_zhao=population_sample
+# 
+# ohe_feats = names(Filter(is.factor, df_zhao))
+# for (f in ohe_feats){
+#   df_all_dummy = acm.disjonctif(df_zhao[f])
+#   df_zhao[f] = NULL
+#   df_zhao = cbind(df_zhao, df_all_dummy)
+# }
+
+
+population_sample[sapply(population_sample, is.character)] <- lapply(population_sample[sapply(population_sample, is.character)], as.factor)
+# df_zhao=population_sample
+
+# target encoder (target is readmission)
+target_encoder_readmit<- function(df_zhao){
+  ohe_feats = names(Filter(is.factor, df_zhao))
+  ohe_index = match(ohe_feats, names(df_zhao))
+  for (f in ohe_index){
+    # creating a lookup table
+    lookup = df_zhao %>%group_by_at(f)%>%summarise(mean(readm_flag))
+    temp = left_join(df_zhao[colnames(df_zhao)[f]], lookup,by=colnames(df_zhao)[f])
+    df_zhao[f] = temp[,2]
+  }
+  return(df_zhao)
+}
+
+population_sample <- target_encoder_readmit(population_sample)
+# target encoder has some shortcomings
+```
+
+
+
 Plot the distribution of each state
 ```{r,fig.height=6.5}
 
 # to obtain summary based on provider's state
-df_medicare_state <- df_medicare %>% group_by(prvdr_state_name) %>% summarise(number = length(prvdr_state_name),type = "population" )
+df_medicare_state <- df_medicare %>% group_by(prvdr_state_ab) %>% summarise(number = length(prvdr_state_ab),type = "population" )
 
-test_state <- population_sample %>% group_by(prvdr_state_name) %>% summarise(number =  length(prvdr_state_name),type = "sample" )
+test_state <- population_sample %>% group_by(prvdr_state_ab) %>% summarise(number =  length(prvdr_state_ab),type = "sample" )
 
 df_medicare_state <- rbind(df_medicare_state,test_state)
 
-ggplot(data=df_medicare_state, aes(x = reorder(prvdr_state_name,number), y=log(number)))+
+ggplot(data=df_medicare_state, aes(x = reorder(prvdr_state_ab,number), y=log(number)))+
   geom_bar(stat="identity",fill = "steelblue") +
   coord_flip() +
   xlab('state')+ 
@@ -151,6 +217,7 @@ ggplot(data=df_medicare_state, aes(x = reorder(prvdr_state_name,number), y=log(n
   facet_wrap(~ type) + 
   theme_minimal()
 ```
+
 plot for different hospital
 ```{r}
 
@@ -201,7 +268,6 @@ drops = c('clm_admsn_dt','nch_bene_dschrg_dt','month','week_of_dates','days_befo
 train_valid_base = train_valid[,!(colnames(train_valid) %in% drops)]
 test_base = test[,!(colnames(test) %in% drops)]
 
-library(caret)
 train_valid_base$readm_flag=as.factor(train_valid_base$readm_flag)
 train_valid_base[sapply(train_valid_base, is.character)] <- lapply(train_valid_base[sapply(train_valid_base, is.character)], 
                                        as.factor)
