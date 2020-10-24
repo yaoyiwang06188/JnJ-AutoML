@@ -100,7 +100,7 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_having_colline
 
 hos_num <- df_medicare$prvdr_num
 
-add_colinear <- c('prvdr_num','fy','yr_adm','yr_disch','prvdr_state_name','prvdr_state_cd','prvdr_ssa_county_code','prov_vol_per_month','prvdr_home_hha_vol_month','prvdr_home_hha_vol_per','phy_vol_month','prvdr_urspa','prvdr_cbsa','prvdr_cbsa_desc','prvdr_msa','prvdr_msa_desc')
+add_colinear <- c('prvdr_num','fy','yr_adm','yr_disch','prvdr_state_name','prvdr_state_cd','prvdr_ssa_county_code','prov_vol_per_month','prvdr_home_hha_vol_month','prvdr_home_hha_vol_per','phy_vol_month','prvdr_urspa','prvdr_cbsa','prvdr_cbsa_desc','prvdr_msa','prvdr_msa_desc',"elix_cong_heart_fail_1825_days_b", "elix_periph_vas_dis_1825_days_b", "elix_paralysis_1825_days_b","elix_copd_1825_days_b","elix_aids_1825_days_b", "elix_met_cancer_1825_days_b",     "fci_heart_attack_1825_days_b","fci_obesity_1825_days_b")
 df_medicare <- df_medicare[, !(colnames(df_medicare) %in% add_colinear)]
 
 
@@ -196,8 +196,19 @@ target_encoder_readmit<- function(df_zhao){
 population_sample <- target_encoder_readmit(population_sample)
 # target encoder has some shortcomings
 ```
-
-
+Further Testing collinearity with findLinearCombos
+```{r}
+#date_info = c("clm_admsn_dt", "nch_bene_dschrg_dt")
+#population_sample_nodt <- population_sample[, !(colnames(df_medicare) %in% date_info)]
+#comboInfo <- findLinearCombos(population_sample_nodt)
+#comboInfo
+```
+```{r}
+#display colname of the collinearity feature
+#colnames(population_sample_nodt[, c(26, 10, 30, 11, 33, 20, 35, 14, 39, 21, 42, 25, 44, 25, 63, 9, 74, 48)])
+#remove = colnames(population_sample_nodt[, comboInfo$remove])
+#population_sample <- population_sample[, !(colnames(population_sample) %in% remove)]
+```
 
 Plot the distribution of each state
 ```{r,fig.height=6.5}
