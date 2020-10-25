@@ -17,6 +17,11 @@ library(plotly)
 library(ade4)
 library(data.table)
 library(caret)
+library(devtools) #inorder to use install_version
+#most current version of xgboost can't be installed on the Rstudio server, thus
+#install the older version: xgboost_0.90.0.2.tar.gz	2019-08-01 21:20	826K
+#install_version("xgboost", version = "0.90.0.2", repost = "http://cran.us.r-project.org")
+library(xgboost)
 ```
 
 
@@ -100,7 +105,9 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_having_colline
 
 hos_num <- df_medicare$prvdr_num
 
-add_colinear <- c('prvdr_num','fy','yr_adm','yr_disch','prvdr_state_name','prvdr_state_cd','prvdr_ssa_county_code','prov_vol_per_month','prvdr_home_hha_vol_month','prvdr_home_hha_vol_per','phy_vol_month','prvdr_urspa','prvdr_cbsa','prvdr_cbsa_desc','prvdr_msa','prvdr_msa_desc',"elix_cong_heart_fail_1825_days_b", "elix_periph_vas_dis_1825_days_b", "elix_paralysis_1825_days_b","elix_copd_1825_days_b","elix_aids_1825_days_b", "elix_met_cancer_1825_days_b",     "fci_heart_attack_1825_days_b","fci_obesity_1825_days_b")
+add_colinear <- c('prvdr_num','fy','yr_adm','yr_disch','prvdr_state_name','prvdr_state_cd','prvdr_ssa_county_code','prov_vol_per_month','prvdr_home_hha_vol_month','prvdr_home_hha_vol_per','phy_vol_month','prvdr_urspa','prvdr_cbsa','prvdr_cbsa_desc','prvdr_msa','prvdr_msa_desc', "elix_cong_heart_fail_1825_days_b", "elix_periph_vas_dis_1825_days_b", "elix_paralysis_1825_days_b","elix_copd_1825_days_b","elix_aids_1825_days_b", "elix_met_cancer_1825_days_b",     "fci_heart_attack_1825_days_b","fci_obesity_1825_days_b" )
+
+
 df_medicare <- df_medicare[, !(colnames(df_medicare) %in% add_colinear)]
 
 
@@ -126,6 +133,7 @@ Remove missing value
 df_medicare[df_medicare == -999] <- NA
 df_medicare[df_medicare == 'NA'] <- NA
 df_medicare <- df_medicare %>% drop_na(hospital_name,prvdr_teaching_status,ma_pen_percent,prvdr_rday,ami_cabg)
+# The following code is to check whether there is still missing value left
 # df_medicare <- df_medicare[df_medicare %>% is.na() %>% rowSums() == 0,]
 # t <- colSums(is.na(df_medicare))
 # t[t!=0]
@@ -143,6 +151,7 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_hospital_info)
 
 ```
 
+
 ```{r}
 ###df_medicare_state <- df_medicare %>% group_by(prvdr_state_name) %>% summarise(number = length(prvdr_state_name), sample = as.integer(length(prvdr_state_name)/10) )
 ## for histogram (entire dataset)
@@ -150,7 +159,7 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_hospital_info)
 # ----------------- 
 #Population Sampling
 # -----------------
-
+set.seed(100) #for reproduce purpose
 population_sample <- df_medicare %>% group_by(prvdr_state_ab) %>% sample_n(as.integer(ceiling(length(prvdr_state_ab)/20)))
 ```
 
@@ -196,6 +205,8 @@ target_encoder_readmit<- function(df_zhao){
 population_sample <- target_encoder_readmit(population_sample)
 # target encoder has some shortcomings
 ```
+
+
 Further Testing collinearity with findLinearCombos
 ```{r}
 #date_info = c("clm_admsn_dt", "nch_bene_dschrg_dt")
@@ -203,12 +214,193 @@ Further Testing collinearity with findLinearCombos
 #comboInfo <- findLinearCombos(population_sample_nodt)
 #comboInfo
 ```
+
 ```{r}
-#display colname of the collinearity feature
 #colnames(population_sample_nodt[, c(26, 10, 30, 11, 33, 20, 35, 14, 39, 21, 42, 25, 44, 25, 63, 9, 74, 48)])
 #remove = colnames(population_sample_nodt[, comboInfo$remove])
 #population_sample <- population_sample[, !(colnames(population_sample) %in% remove)]
 ```
+```{r}
+#remove
+```
+
+```{r}
+# ----------------- 
+# train population model
+# -----------------
+
+# we focus on readmission now. so we remove mortality and er_90days 
+drops<- c('mortality_90', 'er_90days')
+population_sample <- population_sample[,!(colnames(population_sample) %in% drops)]
+
+# Add time related features
+population_sample$clm_admsn_dt = as.Date(population_sample$clm_admsn_dt)
+population_sample$nch_bene_dschrg_dt = as.Date(population_sample$nch_bene_dschrg_dt)
+population_sample$month = months(population_sample$clm_admsn_dt,abbreviate = TRUE)
+population_sample$week_of_dates = weekdays(population_sample$clm_admsn_dt,abbreviate = TRUE)
+population_sample$days_before_admsn = population_sample$clm_admsn_dt-as.Date('2016-01-01')
+population_sample$days_before_dschrg = population_sample$nch_bene_dschrg_dt - as.Date('2016-01-01')
+
+
+#change target to factor
+population_sample$readm_flag=as.factor(population_sample$readm_flag)
+
+# hold out test set
+population_sample = population_sample[order(population_sample$clm_admsn_dt),]
+size = nrow(population_sample)
+#create train for training model with cv method
+train_size = as.integer(round(size*0.7,digits=0))
+#crerate val for comparing models
+val_size = as.integer(round(size*0.15,digits=0))
+test_size = as.integer(size - train_size - val_size)
+
+train = population_sample[c(1:train_size), ]
+val = population_sample[c((train_size+1): (train_size + val_size)), ]
+test = population_sample[c((train_size + val_size +1):size), ]
+
+# dataset for base model (remove time related features)
+drops = c('clm_admsn_dt','nch_bene_dschrg_dt','month','week_of_dates','days_before_admsn','days_before_dschrg')
+train_base = train[,!(colnames(train) %in% drops)]
+val_base = val[,!(colnames(val) %in% drops)]
+test_base = test[,!(colnames(test) %in% drops)]
+
+
+
+```
+
+100,000
+train(along with cv) 0.7 (whole data) 
+validation (for deciding to model use) 0.15 (whole data)
+test (only use once) 0.15 (whole data)
+
+
+XGboost
+```{r}
+#Need numeric to turn into xgb.Dmatrix
+try_data <-  train_base[c(1:200),]
+
+X_train = xgb.DMatrix(as.matrix(try_data %>% select(-readm_flag)))
+try_data$readm_flag =as.factor(try_data$readm_flag)
+y_train = try_data$readm_flag
+sm_test = test_base[c(1:100),]
+X_test = xgb.DMatrix(as.matrix(sm_test %>% select(-readm_flag)))
+y_test = as.factor(sm_test$readm_flag)
+
+```
+
+XGboost F1 Score
+
+```{r}
+#Reference: https://datascienceplus.com/extreme-gradient-boosting-with-r/
+#Specify cross-validation method and number of folds. Also enable parallel computation
+#The column “Kappa” is Cohen’s (unweighted) Kappa statistic averaged across the resampling results. 
+#https://en.wikipedia.org/wiki/Cohen%27s_kappa#Properties
+library(MLmetrics)
+#F1 as score
+#y_train might need to be factor form to apply level
+#level replacing 0, 1 to "Class_0" and "Class_1" as variables due to classProbs need
+levels(y_train) <- c("Class_0", "Class_1")
+#to set Class_1 as positive class
+y_train <- factor(y_train, levels=rev(levels(y_train)))
+#R caret cv doesn't do stratified, meaning we migh have missing class in the sample
+#Thus fix it by creating index inadvance
+#Reference Code: https://stackoverflow.com/questions/35907477/caret-package-stratified-cross-validation-in-train-function
+folds <- 5
+cvIndex <- createFolds(factor(y_train), folds, returnTrain = T)
+xgb_trcontrol_f1 = trainControl(
+  index = cvIndex,
+  method = "cv",
+  number = folds,  
+  allowParallel = TRUE,
+  verboseIter = FALSE,
+  classProbs = TRUE,
+  #Need to install "MLmetrics" packages
+  summaryFunction = prSummary,
+  returnData = FALSE
+)
+
+#I am specifing the same parameters with the same values as I did for Python above. The hyperparameters to optimize are found in the website.
+xgbGrid <- expand.grid(nrounds = c(100,200),  # this is n_estimators in the python code above
+                       max_depth = c(10, 15, 20, 25),
+                       colsample_bytree = seq(0.5, 0.9, length.out = 5),
+                       ## The values below are default values in the sklearn-api. 
+                       eta = 0.1,
+                       gamma=0,
+                       min_child_weight = 1,
+                       subsample = 1
+                      )
+set.seed(0) 
+xgb_model_f1 = train(
+  X_train, y_train,  
+  trControl = xgb_trcontrol_f1,
+  tuneGrid = xgbGrid,
+  method = "xgbTree",
+  metric = "F"
+)
+```
+
+```{r}
+#Summary
+xgb_model_f1$results
+```
+```{r}
+#best tune result
+xgb_model_f1$bestTune
+```
+```{r}
+#obtain the best f1 score from the result
+max(xgb_model_f1$results$F)
+```
+
+
+
+Reglogistic Regression
+```{r}
+#double check if there is na
+colnames(try_data)[colSums(is.na(try_data)) > 0]
+# ----------------- 
+#   regLogistic
+# -----------------
+levels(try_data$readm_flag)= c("Class_0", "Class_1")
+try_data$readm_flag <- factor(try_data$readm_flag, levels=rev(levels(try_data$readm_flag)))
+
+train.control <- trainControl(index = cvIndex,
+                              method = "cv",
+                              number = folds,
+                              summaryFunction = prSummary,
+                              classProbs = TRUE)
+
+logistic_fit <- train(form = readm_flag ~., 
+                 data = try_data, 
+                 method = 'regLogistic',
+                 trControl=train.control ,
+                 metric = "F")
+
+```
+Random Forest
+```{r}
+#double check if there is na
+colnames(try_data)[colSums(is.na(try_data)) > 0]
+# ----------------- 
+#   rf
+# -----------------
+levels(try_data$readm_flag)= c("Class_0", "Class_1")
+try_data$readm_flag <- factor(try_data$readm_flag, levels=rev(levels(try_data$readm_flag)))
+
+train.control <- trainControl(index = cvIndex,
+                              method = "cv",
+                              number = folds,
+                              summaryFunction = prSummary,
+                              classProbs = TRUE)
+
+rf_fit <- train(form = readm_flag ~., 
+                 data = try_data, 
+                 method = 'rf',
+                 trControl=train.control ,
+                 metric = "F")
+
+```
+
 
 Plot the distribution of each state
 ```{r,fig.height=6.5}
@@ -248,6 +440,12 @@ ggplot(data=df_medicare_hos, aes(x = reorder(provider_type, number), y=log(numbe
   theme_minimal() +
   facet_wrap( ~ type)
 ```
+```{r}
+#check target mean
+mean(population_sample$readm_flag)
+mean(df_medicare$readm_flag)
+```
+
 
 ```{r}
 # ----------------- 
