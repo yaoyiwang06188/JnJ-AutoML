@@ -88,6 +88,7 @@ data <- fetch(res,n = -1)
 ```
 
 ```{r}
+global_st <- Sys.time()
 df_medicare <- data
 dim(df_medicare)
 ```
@@ -100,7 +101,7 @@ columns_having_target_info <- c('mortality_365', 'readm_flag_365', 'er_365days',
 df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_having_target_info)]
 ```
 
-Remove collinear features (184 - 153 = 31)
+Remove collinear features (184 - 152 = 32)
 ```{r}
 columns_having_collinearity <- c('cci_score_1825_days_b','elix_score_1825_days_b',  'fci_score_1825_days_b', 'follow_up_end_dt', 'follow_up_end_dt_365','ppx_desc', 'pdx_desc')
 
@@ -115,7 +116,7 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% add_colinear)]
 
 ```
 
-Remove features same entry and unique entry (153 - 139 = 14)
+Remove features same entry and unique entry (152 - 138 = 14)
 ```{r}
 columns_no_variance <- c('version_id', 'cont_enroll_flag_1825b_89f', 'valid_date_of_death_1825b_89f', 'hmo_enroll_flag_1825b_89f', 'hmo_enroll_flag_365f','cont_enroll_flag_365f','at_physn_upin', 'op_physn_upin', 'ot_physn_upin')
 
@@ -184,25 +185,7 @@ population_sample$days_before_admsn = as.numeric(population_sample$clm_admsn_dt-
 drops = c('clm_admsn_dt')
 population_sample = population_sample[,!(colnames(population_sample) %in% drops)]
 
-# Note the target encoder and the standardize should be only applied to train data
-
-
-# standardize all numeric column
-# population_sample=population_sample %>% mutate_if(is.numeric, scale)
-# preProcValues <- preProcess(training, method = c("center", "scale"))
-# trainTransformed <- predict(preProcValues, training)
-# 
-# one hot encoder
-# df_zhao=population_sample
-# 
-# ohe_feats = names(Filter(is.factor, df_zhao))
-# for (f in ohe_feats){
-#   df_all_dummy = acm.disjonctif(df_zhao[f])
-#   df_zhao[f] = NULL
-#   df_zhao = cbind(df_zhao, df_all_dummy)
-# }
-
-
+#for later target encoder use
 population_sample[sapply(population_sample, is.character)] <- lapply(population_sample[sapply(population_sample, is.character)], as.factor)
 ```
 
@@ -230,34 +213,6 @@ train = population_sample[c(1:train_size), ]
 val = population_sample[c((train_size+1): (train_size + val_size)), ]
 test = population_sample[c((train_size + val_size +1):size), ]
 
-```
-
-```{r}
-#target encoding develop code
-# cat_name = names(Filter(is.factor, train))
-# cat_index = match(cat_name, names(train))
-# for(i in cat_index){
-#   #create a lookup table for each categorical class
-#   lookup = train %>% group_by_at(i) %>% summarise(mean(readm_flag))
-#   train_targetmean = left_join(train[colnames(train)[i]], lookup, by=colnames(train)[i])
-#   val_targetmean = left_join(val[colnames(val)[i]], lookup, by=colnames(val)[i])
-#   test_targetmean = left_join(test[colnames(test)[i]], lookup, by=colnames(test)[i])
-#   train[i] = train_targetmean[,2]
-#   val[i] = val_targetmean[,2]
-#   test[i] = test_targetmean[,2]
-# }
-# 
-# #drop the rows with the categorical variables not in train set
-# print("Missing class in validation set")
-# t <- colSums(is.na(val))
-# t[t!=0]
-# 
-# print("Missing class in test set")
-# t <- colSums(is.na(test))
-# t[t!=0]
-# 
-# #val = val %>% drop_na()
-# #test = test %>% drop_na()
 ```
 
 
@@ -310,13 +265,13 @@ comboInfo
 Data preprocessing to put into "train" function
 ```{r}
 #Due to computing power, start with 200 observations first, and 100 for validation set, 100 for test set
-sm_train_size = 200
-sm_val_size = 100
-sm_test_size = 100
+sm_train_size = 1000
+sm_val_size = 500
+sm_test_size = 500
 
 train = train_tgen[c(1:sm_train_size),]
 val = val_tgen[c(1:sm_val_size),]
-test = test_tgen[c(1:sm_test_size)]
+test = test_tgen[c(1:sm_test_size),]
 
 #R caret cv doesn't do stratified, meaning we might have missing class in the sample
 #Thus fix it by creating index inadvance
@@ -420,6 +375,16 @@ train_combined_time = train
 # E    +----+----+
 # D  0 | FN | TN |
 #      +----+----+
+
+# since if we predict all as Class 0 or as Class 1, F1_score will return error, plus we don't want a model that predict all as 0 or 1, thus set its f1 score = -1 indicate bad model
+unbias_f1 = function(pred, yval){
+  f1 = -1
+  if (sum(pred)!= 0 & sum(pred)!= length(pred)){
+    f1 = F1_Score( y_pred = pred, y_true = yval, positive = 1)
+  }
+  return(f1)
+}
+
 ```
 
 
@@ -428,7 +393,7 @@ XGboost-Based
 ```{r}
 #Reference: https://datascienceplus.com/extreme-gradient-boosting-with-r/
 #Specify cross-validation method and number of folds. Also enable parallel computation
-
+xgb_base_start_time <- Sys.time()
 xgb_trcontrol = trainControl(
   index = cvIndex,
   method = "cv",
@@ -458,7 +423,8 @@ xgb_base_fit = train(
   method = "xgbTree",
   metric = "F"
 )
-
+xgb_base_end_time <- Sys.time()
+print(xgb_base_end_time - xgb_base_start_time)
 ```
 
 ```{r}
@@ -478,7 +444,7 @@ print(paste("XGboost base model best train_val score: ", as.character(xgb_base_t
 #Prediction by class to get F1_Score
 pre <- predict(xgb_base_fit, newdata = X_val_base, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-xgb_base_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+xgb_base_val_f1score =unbias_f1(pred, y_val)
 
 print(paste("XGboost base model val F1 score: ", as.character(xgb_base_val_f1score)))
 ```
@@ -501,6 +467,7 @@ print(paste("XGboost base model acc on val: ", as.character(xgb_base_acc)))
 
 XGboost with Boruta
 ```{r}
+start_time <- Sys.time()
 set.seed(0) 
 xgb_bor_fit = train(
   X_train_bor_xgb, y_train,  
@@ -509,6 +476,8 @@ xgb_bor_fit = train(
   method = "xgbTree",
   metric = "F"
 )
+end_time <- Sys.time()
+print(end_time - start_time)
 ```
 ```{r}
 #Summary on the model
@@ -527,7 +496,7 @@ print(paste("XGboost boruta model best train_val score: ", as.character(xgb_bor_
 #Prediction by class to get F1_Score
 pre <- predict(xgb_bor_fit, newdata = X_val_bor, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-xgb_bor_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+xgb_bor_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("XGboost Boruta model val F1 score: ", as.character(xgb_bor_val_f1score)))
 ```
@@ -550,6 +519,7 @@ print(paste("XGboost Boruta model acc on val: ", as.character(xgb_bor_acc)))
 
 XGBoost with boruta and time relate features
 ```{r}
+start_time <- Sys.time()
 set.seed(0) 
 xgb_bor_time_fit = train(
   X_train_bor_time_xgb, y_train,  
@@ -558,6 +528,8 @@ xgb_bor_time_fit = train(
   method = "xgbTree",
   metric = "F"
 )
+end_time <- Sys.time()
+print(end_time - start_time)
 ```
 ```{r}
 #Summary on the model
@@ -574,7 +546,7 @@ print(paste("XGboost boruta model with time features best train_val score: ", as
 #Prediction by class to get F1_Score
 pre <- predict(xgb_bor_time_fit, newdata = X_val_bor_time, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-xgb_bor_time_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+xgb_bor_time_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("XGboost Boruta model with time features val F1 score: ", as.character(xgb_bor_time_val_f1score)))
 ```
@@ -598,6 +570,7 @@ print(paste("XGboost Boruta model with time features acc on val: ", as.character
 XGBoost with time relate features no boruta
 
 ```{r}
+start_time <- Sys.time()
 set.seed(0) 
 xgb_time_fit = train(
   X_train_time_xgb, y_train,  
@@ -606,6 +579,8 @@ xgb_time_fit = train(
   method = "xgbTree",
   metric = "F"
 )
+end_time <- Sys.time()
+print(end_time - start_time)
 ```
 ```{r}
 #Summary on the model
@@ -622,7 +597,7 @@ print(paste("XGboost base + time features model best train_val score: ", as.char
 #Prediction by class to get F1_Score
 pre <- predict(xgb_time_fit, newdata = X_val_time, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-xgb_time_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+xgb_time_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("XGboost Base model with time features val F1 score: ", as.character(xgb_time_val_f1score)))
 ```
@@ -650,6 +625,7 @@ ft_sel_methods = c("based", "boruta", "boruta_time", "base_time")
 xgb_trvl = c(xgb_base_trainval_sc, xgb_bor_trainval_sc, xgb_bor_time_trainval_sc, xgb_time_trainval_sc)
 xgb_val_f1score = c(xgb_base_val_f1score, xgb_bor_val_f1score, xgb_bor_time_val_f1score, xgb_time_val_f1score)
 xgb_LogLoss = c(xgb_base_LogLoss,xgb_bor_LogLoss,xgb_bor_time_LogLoss,xgb_time_LogLoss)
+xgb_AUC = c(xgb_base_AUC,xgb_bor_AUC,xgb_bor_time_AUC,xgb_time_AUC)
 
 print(ft_sel_methods)
 print("train_val score")
@@ -658,6 +634,8 @@ print("Val F1 Score")
 print(xgb_val_f1score)
 print("LogLoss")
 print(xgb_LogLoss)
+print("AUC")
+print(xgb_AUC)
 
 print("Summary on XGboost")
 print(paste("XGboost with highest train_val score:", ft_sel_methods[which.max(xgb_trvl)], as.character(max(xgb_trvl)), sep = " "))
@@ -672,6 +650,7 @@ Random Forest
 Base-Model
 
 ```{r}
+start_time <- Sys.time()
 rf_trcontrol = trainControl(index = cvIndex,
                               method = "cv",
                               number = folds,
@@ -684,7 +663,8 @@ rf_base_fit <- train(
   trControl= rf_trcontrol,
   method = 'ranger',
   metric = "F")
-
+end_time <- Sys.time()
+print(end_time - start_time)
 ```
 
 ```{r}
@@ -702,7 +682,7 @@ print(paste("Random Forest base model best train_val score: ", as.character(rf_b
 #Prediction by class to get F1_Score
 pre <- predict(rf_base_fit, newdata = X_val_base, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-rf_base_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+rf_base_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("Random forest base model val F1 score: ", as.character(rf_base_val_f1score)))
 ```
@@ -727,6 +707,7 @@ Random Forest
 Boruta-Model
 
 ```{r}
+start_time <- Sys.time()
 set.seed(0)
 rf_bor_fit <- train(
   form = readm_flag ~., 
@@ -734,7 +715,8 @@ rf_bor_fit <- train(
   trControl= rf_trcontrol,
   method = 'ranger',
   metric = "F")
-
+end_time <- Sys.time()
+print(end_time - start_time)
 ```
 
 ```{r}
@@ -752,7 +734,7 @@ print(paste("Random Forest Burota model best train_val score: ", as.character(rf
 #Prediction by class to get F1_Score
 pre <- predict(rf_bor_fit, newdata = X_val_bor, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-rf_bor_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+rf_bor_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("Random forest Boruta model val F1 score: ", as.character(rf_bor_val_f1score)))
 ```
@@ -779,6 +761,7 @@ Random Forest
 Boruta-time Model
 
 ```{r}
+start_time <- Sys.time()
 set.seed(0)
 rf_bor_time_fit <- train(
   form = readm_flag ~., 
@@ -786,6 +769,8 @@ rf_bor_time_fit <- train(
   trControl= rf_trcontrol,
   method = 'ranger',
   metric = "F")
+end_time <- Sys.time()
+print(end_time - start_time)
 
 ```
 
@@ -804,7 +789,7 @@ print(paste("Random Forest Burota + time features model best train_val score: ",
 #Prediction by class to get F1_Score
 pre <- predict(rf_bor_time_fit, newdata = X_val_bor_time, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-rf_bor_time_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+rf_bor_time_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("Random forest Boruta + time features model val F1 score: ", as.character(rf_bor_time_val_f1score)))
 ```
@@ -830,6 +815,7 @@ Random Forest
 Based-time Model
 
 ```{r}
+start_time <- Sys.time()
 set.seed(0)
 rf_time_fit <- train(
   form = readm_flag ~., 
@@ -837,7 +823,8 @@ rf_time_fit <- train(
   trControl= rf_trcontrol,
   method = 'ranger',
   metric = "F")
-
+end_time <- Sys.time()
+print(end_time - start_time)
 ```
 
 ```{r}
@@ -855,7 +842,7 @@ print(paste("Random Forest Base + time features model best train_val score: ", a
 #Prediction by class to get F1_Score
 pre <- predict(rf_time_fit, newdata = X_val_time, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-rf_time_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+rf_time_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("Random forest Base + time features model val F1 score: ", as.character(rf_time_val_f1score)))
 ```
@@ -882,6 +869,7 @@ ft_sel_methods = c("based", "boruta", "boruta_time", "base_time")
 rf_trvl = c(rf_base_trainval_sc, rf_bor_trainval_sc, rf_bor_time_trainval_sc, rf_time_trainval_sc)
 rf_val_f1score = c(rf_base_val_f1score, rf_bor_val_f1score, rf_bor_time_val_f1score, rf_time_val_f1score)
 rf_LogLoss = c(rf_base_LogLoss,rf_bor_LogLoss,rf_bor_time_LogLoss,rf_time_LogLoss)
+rf_AUC = c(rf_base_AUC,rf_bor_AUC,rf_bor_time_AUC,rf_time_AUC)
 
 print(ft_sel_methods)
 print("train_val score")
@@ -890,6 +878,8 @@ print("Val F1 Score")
 print(rf_val_f1score)
 print("LogLoss")
 print(rf_LogLoss)
+print("AUC")
+print(rf_AUC)
 
 print("Summary on Random forest")
 print(paste("Random forest with highest train_val score:", ft_sel_methods[which.max(rf_trvl)], as.character(max(rf_trvl)), sep = " "))
@@ -911,13 +901,15 @@ rlg_trcontrol = trainControl(index = cvIndex,
                               summaryFunction = prSummary,
                               classProbs = TRUE)
 set.seed(0)
+start_time  <- Sys.time()
 rlg_base_fit <- train(
   form = readm_flag ~., 
   data =train_combined_base,
   trControl= rlg_trcontrol,
   method = 'regLogistic',
   metric = "F")
-
+end_time <- Sys.time()
+print(end_time - start_time)
 ```
 
 ```{r}
@@ -935,7 +927,7 @@ print(paste("regLogistic base model best train_val score: ", as.character(rlg_ba
 #Prediction by class to get F1_Score
 pre <- predict(rlg_base_fit, newdata = X_val_base, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-rlg_base_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+rlg_base_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("regLogistic base model val F1 score: ", as.character(rlg_base_val_f1score)))
 ```
@@ -961,13 +953,15 @@ Boruta-Model
 
 ```{r}
 set.seed(0)
+start_time <- Sys.time()
 rlg_bor_fit <- train(
   form = readm_flag ~., 
   data =train_combined_bor,
   trControl= rf_trcontrol,
   method = 'regLogistic',
   metric = "F")
-
+end_time <- Sys.time()
+print(end_time - start_time)
 ```
 
 ```{r}
@@ -985,7 +979,7 @@ print(paste("regLogistic Burota model best train_val score: ", as.character(rlg_
 #Prediction by class to get F1_Score
 pre <- predict(rlg_bor_fit, newdata = X_val_bor, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-rlg_bor_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+rlg_bor_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("regLogistic Boruta model val F1 score: ", as.character(rlg_bor_val_f1score)))
 ```
@@ -1012,14 +1006,15 @@ regLogistic
 Boruta-time Model
 
 ```{r}
-
+start_time <- Sys.time()
 rlg_bor_time_fit <- train(
   form = readm_flag ~., 
   data =train_combined_bor_time,
   trControl= rf_trcontrol,
   method = 'regLogistic',
   metric = "F")
-
+end_time <- Sys.time()
+print(end_time - start_time)
 ```
 
 ```{r}
@@ -1037,16 +1032,7 @@ print(paste("Random Forest Burota + time features model best train_val score: ",
 #Prediction by class to get F1_Score
 pre <- predict(rlg_bor_time_fit, newdata = X_val_bor_time, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-rlg_bor_time_val_f1score = F1_Score( y_pred = pred, y_true = y_val, positive = 1)
-
-print(paste("regLogistic Boruta + time features model val F1 score: ", as.character(rlg_bor_time_val_f1score)))
-```
-
-```{r}
-#Prediction by class to get F1_Score
-pre <- predict(rlg_bor_time_fit, newdata = X_val_bor_time, type = "raw")
-pred =ifelse(pre  == "Class_0",0,1)
-rlg_bor_time_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+rlg_bor_time_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("regLogistic Boruta + time features model val F1 score: ", as.character(rlg_bor_time_val_f1score)))
 ```
@@ -1073,13 +1059,15 @@ Based-time Model
 
 ```{r}
 set.seed(0)
+start_time <- Sys.time()
 rlg_time_fit <- train(
   form = readm_flag ~., 
   data =train_combined_time,
   trControl= rf_trcontrol,
   method = 'regLogistic',
   metric = "F")
-
+end_time <- Sys.time()
+print(end_time - start_time)
 ```
 
 ```{r}
@@ -1097,7 +1085,7 @@ print(paste("regLogistic Base + time features model best train_val score: ", as.
 #Prediction by class to get F1_Score
 pre <- predict(rlg_time_fit, newdata = X_val_time, type = "raw")
 pred =ifelse(pre  == "Class_0",0,1)
-rlg_time_val_f1score = F1_Score(y_pred =ifelse(pre  == "Class_0",0,1), y_true = y_val, positive = 1)
+rlg_time_val_f1score = unbias_f1(pred, y_val)
 
 print(paste("regLogistic Base + time features model val F1 score: ", as.character(rlg_time_val_f1score)))
 ```
@@ -1122,20 +1110,52 @@ print(paste("Random forest Boruta + time features model acc on val: ", as.charac
 #Summary on regLogistic
 ft_sel_methods = c("based", "boruta", "boruta_time", "base_time")
 rlg_trvl = c(rlg_base_trainval_sc, rlg_bor_trainval_sc, rlg_bor_time_trainval_sc, rlg_time_trainval_sc)
-#rlg_val_f1score = c(rlg_base_val_f1score, rlg_bor_val_f1score, rlg_bor_time_val_f1score, rlg_time_val_f1score)
+rlg_val_f1score = c(rlg_base_val_f1score, rlg_bor_val_f1score, rlg_bor_time_val_f1score, rlg_time_val_f1score)
 rlg_LogLoss = c(rlg_base_LogLoss,rlg_bor_LogLoss,rlg_bor_time_LogLoss,rlg_time_LogLoss)
+rlg_AUC = c(rlg_base_AUC,rlg_bor_AUC,rlg_bor_time_AUC,rlg_time_AUC)
 
 print(ft_sel_methods)
 print("train_val score")
 print(rlg_trvl)
 print("Val F1 Score")
-#print(rlg_val_f1score)
+print(rlg_val_f1score)
 print("LogLoss")
 print(rlg_LogLoss)
+print("AUC")
+print(rlg_AUC)
 
 print("Summary on regLogistic")
 print(paste("regLogistic with highest train_val score:", ft_sel_methods[which.max(rlg_trvl)], as.character(max(rlg_trvl)), sep = " "))
-#print(paste("regLogistic with highest val f1 score:", ft_sel_methods[which.max(rlg_val_f1score)], as.character(max(rlg_val_f1score)), sep = " "))
+print(paste("regLogistic with highest val f1 score:", ft_sel_methods[which.max(rlg_val_f1score)], as.character(max(rlg_val_f1score)), sep = " "))
 
 print(paste("regLogistic with lowest logloss:", ft_sel_methods[which.min(rlg_LogLoss)], as.character(min(rlg_LogLoss)), sep = " "))
 ```
+
+```{r}
+#Final Summary
+ft_sel_methods = c("xgbbased", "xgbboruta", "xgbboruta_time", "xgbbase_time", "rfbased", "rfboruta", "rfboruta_time", "rfbase_time", "rlgbased", "rlgboruta", "rlgboruta_time", "rlgbase_time")
+
+print(ft_sel_methods)
+print("train_val score")
+all_trvl = c(xgb_trvl, rf_trvl, rlg_trvl)
+print(all_trvl)
+print("Val F1 Score")
+all_val_f1score = c(xgb_val_f1score, rf_val_f1score, xgb_val_f1score)
+print(all_val_f1score)
+print("LogLoss")
+all_LogLoss = c(xgb_LogLoss,rf_LogLoss, rlg_LogLoss)
+print(all_LogLoss)
+print("AUC")
+print(c(xgb_AUC,rf_AUC, rlg_AUC))
+
+
+print("Summary on all")
+print(paste("Highest train_val score:", ft_sel_methods[which.max(all_trvl)], as.character(max(all_trvl)), sep = " "))
+print(paste("Highest val f1 score:", ft_sel_methods[which.max(all_val_f1score)], as.character(max(all_val_f1score)), sep = " "))
+
+print(paste("Lowest logloss:", ft_sel_methods[which.min(all_LogLoss)], as.character(min(all_LogLoss)), sep = " "))
+global_ed <- Sys.time()
+print(global_ed - global_st)
+```
+
+
