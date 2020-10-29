@@ -88,61 +88,150 @@ data <- fetch(res,n = -1)
 ```
 
 ```{r}
-# global_st <- Sys.time()
 df_medicare <- data
 dim(df_medicare)
 ```
 
-Remove target information (247 -184 = 63)
 ```{r}
+#----------------
+# Data Cleaning
+#----------------
+
+# Remove target information (247 -184 = 63)
+
 drops <- c('mortality_365', 'readm_flag_365', 'er_365days', 're_claim_no',  're_clm_admsn_dt', 're_nch_bene_dschrg_dt','re_prvdr_num', 're_clm_utlztn_day_cnt', 're_clm_pmt_amt', 're_pdx', 're_ppx', 're_adm_source', 're_disc_status', 're_pdx_desc', 're_ppx_desc', 're_clm_admsn_dt_365', 're_nch_bene_dschrg_dt_365', 're_prvdr_num_365', 're_clm_utlztn_day_cnt_365', 're_clm_pmt_amt_365', 're_pdx_365', 're_ppx_365', 're_adm_source_365', 're_claim_no_365', 're_disc_status_365', 're_pdx_desc_365', 're_ppx_desc_365', 're_claim_no_365_up', 'readm_flag_365_up', 're_clm_admsn_dt_365_up', 're_nch_bene_dschrg_dt_365_up', 're_prvdr_num_365_up', 're_clm_utlztn_day_cnt_365_up', 're_clm_pmt_amt_365_up', 're_pdx_365_up', 're_ppx_365_up', 're_adm_source_365_up', 're_disc_status_365_up', 're_pdx_desc_365_up', 're_ppx_desc_365_up', 'er_claim_no_365', 'er_rev_cntr_dt_365', 'er_clm_thru_dt_365', 'er_prncpal_dgns_cd_365', 'er_pdx_desc_365', 'er_hcpcs_cd_365', 'er_hcpcs_desc_365', 'mortality_365_up', 'er_365days_up', 'er_claim_no_365_up', 'er_rev_cntr_dt_365_up', 'er_clm_thru_dt_365_up', 'er_prncpal_dgns_cd_365_up', 'er_pdx_desc_365_up', 'er_hcpcs_cd_365_up', 'er_hcpcs_desc_365_up','er_claim_no', 'er_rev_cntr_dt', 'er_clm_thru_dt','er_prncpal_dgns_cd','er_pdx_desc', 'er_hcpcs_cd', 'er_hcpcs_desc')
 
 
 df_medicare <- df_medicare[, !(colnames(df_medicare) %in% drops)]
-```
 
-Remove collinear features (184 - 152 = 32)
-```{r}
-drops <- c('cci_score_1825_days_b','elix_score_1825_days_b',  'fci_score_1825_days_b', 'follow_up_end_dt', 'follow_up_end_dt_365','ppx_desc', 'pdx_desc', 'prvdr_num', 'fy', 'yr_adm', 'yr_disch', 'prvdr_state_name', 'prvdr_state_cd', 'prvdr_ssa_county_code', 'prov_vol_per_month', 'prvdr_home_hha_vol_month', 'prvdr_home_hha_vol_per', 'phy_vol_month', 'prvdr_urspa', 'prvdr_cbsa', 'prvdr_cbsa_desc', 'prvdr_msa','prvdr_msa_desc', "elix_cong_heart_fail_1825_days_b", "elix_periph_vas_dis_1825_days_b", "elix_paralysis_1825_days_b", "elix_copd_1825_days_b", "elix_aids_1825_days_b", "elix_met_cancer_1825_days_b", "fci_heart_attack_1825_days_b", "fci_obesity_1825_days_b", 'nch_bene_dschrg_dt')
+
+# Remove collinear features (184 - 152 = 32)
+
+drops <- c('cci_score_1825_days_b','elix_score_1825_days_b',  'fci_score_1825_days_b', 'follow_up_end_dt', 'follow_up_end_dt_365','ppx_desc', 'pdx_desc','hospital_name', 'fy', 'yr_adm', 'yr_disch', 'prvdr_state_name', 'prvdr_state_cd', 'prvdr_ssa_county_code', 'prov_vol_per_month', 'prvdr_home_hha_vol_month', 'prvdr_home_hha_vol_per', 'phy_vol_month', 'prvdr_urspa', 'prvdr_cbsa', 'prvdr_cbsa_desc', 'prvdr_msa','prvdr_msa_desc', "elix_cong_heart_fail_1825_days_b", "elix_periph_vas_dis_1825_days_b", "elix_paralysis_1825_days_b", "elix_copd_1825_days_b", "elix_aids_1825_days_b", "elix_met_cancer_1825_days_b", "fci_heart_attack_1825_days_b", "fci_obesity_1825_days_b", 'nch_bene_dschrg_dt','county')
 
 df_medicare <- df_medicare[, !(colnames(df_medicare) %in% drops)]
 
-#drop hospital name later as needed it for remove na value
-```
 
-Remove features same entry and unique entry (152 - 138 = 14)
-```{r}
+# Remove features same entry and unique entry (152 - 138 = 14)
+
 drops <- c('version_id', 'cont_enroll_flag_1825b_89f', 'valid_date_of_death_1825b_89f', 'hmo_enroll_flag_1825b_89f', 'hmo_enroll_flag_365f','cont_enroll_flag_365f','at_physn_upin', 'op_physn_upin', 'ot_physn_upin',
            'desy_sort_key', 'claim_no', 'ot_physn_npi','at_physn_npi','op_physn_npi')
 
 
 df_medicare <- df_medicare[, !(colnames(df_medicare) %in% drops)]
-```
 
-Remove missing value (439248 - 429599 = 9649)
-```{r}
+# Remove missing value (439248 - 429599 = 9649)
+
 # remove rows with missing value
 df_medicare[df_medicare == -999] <- NA
 df_medicare[df_medicare == 'NA'] <- NA
-df_medicare <- df_medicare %>% drop_na(hospital_name,prvdr_teaching_status,ma_pen_percent,prvdr_rday,ami_cabg)
+df_medicare <- df_medicare %>% drop_na(prvdr_num,prvdr_teaching_status,ma_pen_percent,prvdr_rday,ami_cabg)
+
+```
+
+
+
+
+```{r}
+
+'prvdr_num'
 
 # The following code is to check whether there is still missing value left
 # t <- colSums(is.na(df_medicare))
 # t[t!=0]
  
-#remove hospital_name here as it has collinearity and no need laterr
- df_medicare <- df_medicare[, !(colnames(df_medicare) %in% c("hospital_name"))]
+# #remove hospital_name here as it has collinearity and no need laterr
+#  df_medicare <- df_medicare[, !(colnames(df_medicare) %in% c(""))]
 ```
 
-Remove columns leaking hospital information
 ```{r}
+#-----------
+# Hospital level and Population level Sampling
+#-----------
+
+hos_sample <- df_medicare
+#creating a vector of providers that have more than 100 observations
+keep <- hos_sample %>% 
+  group_by(prvdr_num) %>% 
+  summarise(num = length(prvdr_num)) %>%
+  filter(num > 99) %>% 
+  pull(prvdr_num)
+
+#filtering for only providers with the 100 observations
+hos_sample <- hos_sample %>% 
+  filter(prvdr_num %in% keep)
+
+
+##removing rows that dont have enough positive observations
+#getting lists of hospitals that have at least 10 positive observations for er visit and filter out those that do nott
+keep = hos_sample %>% 
+  group_by(prvdr_num) %>% 
+  summarise(sum_val = sum(hos_sample$readm_flag)) %>% 
+  filter(sum_val >= 10) %>% 
+  pull(prvdr_num)
+hos_sample <- hos_sample %>% 
+  filter(prvdr_num %in% keep)
+
+#getting lists of hospitals that have at least 10 positive observations for mortality and filter out those that do nott
+keep = hos_sample %>% 
+  group_by(prvdr_num) %>% 
+  summarise(sum_val = sum(mortality_90)) %>% 
+  filter(sum_val >= 10) %>% 
+  pull(prvdr_num)
+hos_sample <- hos_sample %>% 
+  filter(prvdr_num %in% keep)
+
+#getting lists of hospitals that have at least 10 positive observations for readmission and filter out those that do nott
+keep = hos_sample %>% 
+  group_by(prvdr_num) %>% 
+  summarise(sum_val = sum(readm_flag)) %>% 
+  filter(sum_val >= 10) %>% 
+  pull(prvdr_num)
+hos_sample <- hos_sample %>% 
+  filter(prvdr_num %in% keep)
+
+#random sample 5% hospital based on the state
+keep <- hos_sample %>% 
+  group_by(prvdr_num) %>% 
+  summarise(number = length(prvdr_num),state = unique(prvdr_state_ab),type = unique(provider_type)) %>%
+  group_by(state) %>%
+  sample_n(as.integer(ceiling(length(state)/20))) %>%
+  pull(prvdr_num)
+
+hos_sample <- hos_sample %>% 
+  filter(prvdr_num %in% keep)
+
+## plots to test the sample
+# t1 <- df_medicare %>%
+#   group_by(prvdr_state_ab) %>%
+#   summarise(num = length(prvdr_state_ab),hos_num = length(unique(prvdr_num)),type = "population")
+# t2 <- hos_sample %>%
+#   group_by(prvdr_state_ab) %>%
+#   summarise(num = length(prvdr_state_ab),hos_num = length(unique(prvdr_num)),type = "sample")
+# t <- rbind(t1,t2) 
 # 
-# columns_hospital_info <- c('fci_arthritis_1825_days_b', 'fci_osteoporosis_1825_days_b', 'fci_asthma_1825_days_b', 'fci_copd_1825_days_b', 'fci_angina_1825_days_b', 'fci_cong_heart_fail_1825_days_b', 'fci_heart_attack_1825_days_b', 'fci_neur_dis_1825_days_b', 'fci_stroke_1825_days_b', 'fci_diabetes_1825_days_b', 'fci_perif_vasc_dis_1825_days_b', 'fci_upper_gi_1825_days_b', 'fci_depression_1825_days_b', 'fci_anxiety_panic_1825_days_b', 'fci_visual_imp_1825_days_b', 'fci_hear_imp_1825_days_b', 'fci_ddd_1825_days_b', 'fci_obesity_1825_days_b', 
-# 'prvdr_state_cd', 'prov_vol_annual', 'prov_vol_per_month', 'prvdr_home_hha_vol', 'prvdr_home_hha_vol_month', 'prvdr_home_hha_vol_per', 'phy_vol_annual', 'phy_vol_month', 'op_phy_cum_exp', 'provider_type', 'hospital_name', 'prvdr_ssa_county_code', 'prvdr_urgeo', 'prvdr_urspa', 'prvdr_wi', 'prvdr_cola', 'prvdr_resident_to_bed_ratio', 'prvdr_rday', 'prvdr_beds', 'prvdr_dshpct', 'prvdr_dshopg', 'prvdr_dshcpg', 'prvdr_state_name', 'prvdr_state_ab', 'prvdr_div_code', 'prvdr_division', 'prvdr_region_cd', 'prvdr_region','county', 'bpci_lejr', 'cjr', 'bpci_ami_cabg', 'ami_cabg', 'prvdr_cbsa', 'prvdr_cbsa_desc', 'prvdr_msa', 'prvdr_msa_desc', 'prvdr_teaching_status', 'low_income_subsidy', 'prior_inp_only_los', 'prior_irf_los', 'prior_ltcf_los', 'prior_snf_los', 'prior_hha_visits', 'prior_out_visits', 'total_prior_los', 'poverty_per', 'grp_1', 'grp_2', 'grp_3', 'grp_4', 'grp_5', 'grp_6', 'grp_7', 'grp_8', 'grp_9', 'grp_10', 'unemp_percentage', 'no_of_snfs', 'ma_pen_percent', 'snf_per_capita')
+# ggplot(data=t, aes(x = reorder(prvdr_state_ab,num), y=log(num)))+
+#   geom_bar(stat="identity",fill = "steelblue") +
+#   coord_flip() +
+#   xlab('state')+ 
+#   ylab('number of patients(log)') +
+#   facet_wrap(~ type) + 
+#   theme_minimal()
 # 
-# 
-# df_medicare <- df_medicare[, !(colnames(df_medicare) %in% columns_hospital_info)]
-# 
+# ggplot(data=t, aes(x = reorder(prvdr_state_ab,hos_num), y=log(hos_num)))+
+#   geom_bar(stat="identity",fill = "steelblue") +
+#   coord_flip() +
+#   xlab('state')+ 
+#   ylab('number of hospitals(log)') +
+#   facet_wrap(~ type) + 
+#   theme_minimal()
+
+population_sample <- hos_sample
+
+# Remove columns leaking hospital information
+drops <- c('fci_arthritis_1825_days_b', 'fci_osteoporosis_1825_days_b', 'fci_asthma_1825_days_b', 'fci_copd_1825_days_b', 'fci_angina_1825_days_b', 'fci_cong_heart_fail_1825_days_b', 'fci_heart_attack_1825_days_b', 'fci_neur_dis_1825_days_b', 'fci_stroke_1825_days_b', 'fci_diabetes_1825_days_b', 'fci_perif_vasc_dis_1825_days_b', 'fci_upper_gi_1825_days_b', 'fci_depression_1825_days_b', 'fci_anxiety_panic_1825_days_b', 'fci_visual_imp_1825_days_b', 'fci_hear_imp_1825_days_b', 'fci_ddd_1825_days_b', 'fci_obesity_1825_days_b', 'prvdr_state_cd', 'prov_vol_annual', 'prov_vol_per_month', 'prvdr_home_hha_vol', 'prvdr_home_hha_vol_month', 'prvdr_home_hha_vol_per', 'phy_vol_annual', 'phy_vol_month', 'op_phy_cum_exp', 'provider_type', 'hospital_name', 'prvdr_ssa_county_code', 'prvdr_urgeo', 'prvdr_urspa', 'prvdr_wi', 'prvdr_cola', 'prvdr_resident_to_bed_ratio', 'prvdr_rday', 'prvdr_beds', 'prvdr_dshpct', 'prvdr_dshopg', 'prvdr_dshcpg', 'prvdr_state_name', 'prvdr_state_ab', 'prvdr_div_code', 'prvdr_division', 'prvdr_region_cd', 'prvdr_region','county', 'bpci_lejr', 'cjr', 'bpci_ami_cabg', 'ami_cabg', 'prvdr_cbsa', 'prvdr_cbsa_desc', 'prvdr_msa', 'prvdr_msa_desc', 'prvdr_teaching_status', 'low_income_subsidy', 'prior_inp_only_los', 'prior_irf_los', 'prior_ltcf_los', 'prior_snf_los', 'prior_hha_visits', 'prior_out_visits', 'total_prior_los', 'poverty_per', 'grp_1', 'grp_2', 'grp_3', 'grp_4', 'grp_5', 'grp_6', 'grp_7', 'grp_8', 'grp_9', 'grp_10', 'unemp_percentage', 'no_of_snfs', 'ma_pen_percent', 'snf_per_capita')
+
+hos_sample <- hos_sample[, !(colnames(hos_sample) %in% drops)]
 
 ```
 
@@ -154,8 +243,8 @@ Remove columns leaking hospital information
 # ----------------- 
 #Population Sampling
 # -----------------
-set.seed(100) #for reproduce purpose
-population_sample <- df_medicare %>% group_by(prvdr_state_ab) %>% sample_n(as.integer(ceiling(length(prvdr_state_ab)/20)))
+# set.seed(100) #for reproduce purpose
+# population_sample <- df_medicare %>% group_by(prvdr_state_ab) %>% sample_n(as.integer(ceiling(length(prvdr_state_ab)/20)))
 ```
 
 ```{r}
@@ -241,86 +330,36 @@ targetencode_transform = function(indices, result, df, dropna = TRUE){
   return(df)
 }
 
-# only need for xgboost
-xg_process = function(train,val,test){
-  train_xg = train %>% select(-readm_flag)
-  train_xg = xgb.DMatrix(as.matrix(train_xg))
-  val_xg = val %>% select(-readm_flag)
-  val_xg = xgb.DMatrix(as.matrix(val_xg))
-  test_xg = test %>% select(-readm_flag)
-  test_xg = xgb.DMatrix(as.matrix(test_xg))
-  
-  return(list(train_xg,val_xg,test_xg))
-}
+# ----------------- 
+# Data Preparation
+# -----------------
 
+# # dataset for base model (remove time related features)
+time_feature = c('month','week_of_dates','days_before_admsn')
+train_base = train[,!(colnames(train) %in% time_feature)]
+val_base = val[,!(colnames(val) %in% time_feature)]
+test_base = test[,!(colnames(test) %in% time_feature)]
 
+## Boruta with no time data set
+sigtest <- Boruta(readm_flag~. , data = train_base, holdHistory=FALSE, doTrace=2)
+boruta_features = getSelectedAttributes(sigtest)
+train_bor = train[, boruta_features]
+val_bor = val[, boruta_features]
+
+## Boruta with time data set
+boruta_time_features = c(boruta_features, time_feature)
+train_bor_time = train[, boruta_time_features]
+val_bor_time = val[, boruta_time_features]
+
+## Base with time data set
+train_time = train 
+val_time = val 
 ```
-
-```{r}
-
-data_preprocess = function(train,val,test,with_time,with_boruta,with_encoder){
- 
-  if (with_time == 0) {
-    time_feature = c('month','week_of_dates','days_before_admsn')
-    train = train[,!(colnames(train) %in% time_feature)]
-    val = val[,!(colnames(val) %in% time_feature)]
-    test = test[,!(colnames(test) %in% time_feature)]
-  }
-  
-  if (with_boruta == 1){
-    sigtest <- Boruta(readm_flag~. , data = train, holdHistory=FALSE, doTrace=2)
-    boruta_features = getSelectedAttributes(sigtest)
-    train = train[, boruta_features]
-    val = val[, boruta_features]
-  }
-  
-  if (with_encoder == 1){
-    cat_index = match(names(Filter(is.factor, train)), names(train))
-    tgen = targetencode(cat_index, train)
-    train = targetencode_transform(cat_index, tgen, train)
-    val = targetencode_transform(cat_index, tgen, val)
-    test = targetencode_transform(cat_index, tgen, test)
-  }
-  
-  # if (if_xg == 1){
-  #   train_xg <- xg_process(train,val,test)[[1]]
-  #   val_xg <- xg_process(train,val,test)[[2]]
-  #   test_xg <- xg_process(train,val,test)[[3]]
-  #   train <- train_xg
-  #   val <- val_xg
-  #   test <- test_xg
-  # }
-
-  return(list(train,val,test))
-}
-
-```
-
-```{r}
-
-train_process <- data_preprocess(train,val,test,with_time=0,with_boruta=0,with_encoder=1)[[1]]
-val_process <- data_preprocess(train,val,test,with_time=0,with_boruta=0,with_encoder=1)[[2]]
-
-test_process <- data_preprocess(train,val,test,with_time=0,with_boruta=0,with_encoder=1)[[3]]
-
-
-```
-
-Further Testing collinearity with findLinearCombos
-```{r}
-#since findlinearcombos only works for numeric values, thus apply here after target encoding
-# comboInfo <- findLinearCombos(train_process)
-# comboInfo
-```
-
-
-
 
 ```{r}
 # ----------------- 
 # Train Model
 # -----------------
-
 
 fitModel = function(train,type){
   
@@ -427,95 +466,32 @@ model <- fitModel(train_process,type = 'rlg')
 Data preprocessing to put into "train" function
 ```{r}
 #Due to computing power, start with 200 observations first, and 100 for validation set, 100 for test set
-sm_train_size = 1000
-sm_val_size = 500
-sm_test_size = 500
-
-train = train_tgen[c(1:sm_train_size),]
-val = val_tgen[c(1:sm_val_size),]
-test = test_tgen[c(1:sm_test_size),]
-
-#R caret cv doesn't do stratified, meaning we might have missing class in the sample
-#Thus fix it by creating index inadvance
-#Reference Code: https://stackoverflow.com/questions/35907477/caret-package-stratified-cross-validation-in-train-function
-folds <- 5
-cvIndex <- createFolds(train$readm_flag, folds, returnTrain = T)
-
-#define variable name for 0 and 1 due to classProbs = TRUE and prSummary in traincontrol
-train$readm_flag =as.factor(train$readm_flag) 
-levels(train$readm_flag)= c("Class_0", "Class_1")
-train$readm_flag <- factor(train$readm_flag, levels=rev(levels(train$readm_flag)))
-
-#create y_train, y_val, and y_test as they are all the same for all type of feature combinations
-y_train = train$readm_flag
-y_val = val$readm_flag
-y_test = test$readm_flag
-```
-
-
-Base Model data set
-
-```{r}
-
-# # dataset for base model (remove time related features)
-# time_feature = c('month','week_of_dates','days_before_admsn')
-# train_base = train[,!(colnames(train) %in% time_feature)]
-# val_base = val[,!(colnames(val) %in% time_feature)]
-# test_base = test[,!(colnames(test) %in% time_feature)]
+# sm_train_size = 1000
+# sm_val_size = 500
+# sm_test_size = 500
 # 
-# #Create xgb.DMatrix specially for XGboost model, run faster
-# #Need numeric to turn into xgb.Dmatrix
-# target = c("readm_")
-# X_train_base = train_base %>% select(-readm_flag)
-# X_train_base_xgb = xgb.DMatrix(as.matrix(X_train_base))
-# X_val_base = val_base %>% select(-readm_flag)
-# X_val_base_xgb = xgb.DMatrix(as.matrix(X_val_base))
-# X_test_base = test_base %>% select(-readm_flag)
-# X_test_base_xgb = xgb.DMatrix(as.matrix(X_test_base))
+# train = train_tgen[c(1:sm_train_size),]
+# val = val_tgen[c(1:sm_val_size),]
+# test = test_tgen[c(1:sm_test_size),]
 # 
-# train_combined_base= train_base
-
-```
-
-
-Boruta with no time data set
-
-```{r}
-# boruta_start_time <- Sys.time()
-# sigtest <- Boruta(readm_flag~. , data = train_base, holdHistory=FALSE, doTrace=2)   # reduce memory footprint: https://cran.r-project.org/web/packages/Boruta/vignettes/inahurry.pdf
-# boruta_end_time <- Sys.time()
-# print(boruta_end_time - boruta_start_time)
-# boruta_features = getSelectedAttributes(sigtest)
-# X_train_bor = train[, boruta_features]
-# X_train_bor_xgb = xgb.DMatrix(as.matrix(X_train_bor))
-# X_val_bor = val[, boruta_features]
-# X_val_bor_xgb = xgb.DMatrix(as.matrix(X_val_bor))
-# print(boruta_features)
+# #R caret cv doesn't do stratified, meaning we might have missing class in the sample
+# #Thus fix it by creating index inadvance
+# #Reference Code: https://stackoverflow.com/questions/35907477/caret-package-stratified-cross-validation-in-train-function
+# folds <- 5
+# cvIndex <- createFolds(train$readm_flag, folds, returnTrain = T)
 # 
-# train_combined_bor = train[, c(boruta_features, "readm_flag")]
+# #define variable name for 0 and 1 due to classProbs = TRUE and prSummary in traincontrol
+# train$readm_flag =as.factor(train$readm_flag) 
+# levels(train$readm_flag)= c("Class_0", "Class_1")
+# train$readm_flag <- factor(train$readm_flag, levels=rev(levels(train$readm_flag)))
+# 
+# #create y_train, y_val, and y_test as they are all the same for all type of feature combinations
+# y_train = train$readm_flag
+# y_val = val$readm_flag
+# y_test = test$readm_flag
 ```
 
-Boruta with time data set
 
-```{r}
-
-# boruta_time_features = c(boruta_features, time_feature)
-# X_train_bor_time = train[, boruta_time_features]
-# X_train_bor_time_xgb = xgb.DMatrix(as.matrix(X_train_bor_time))
-# X_val_bor_time = val[, boruta_time_features]
-# X_val_bor_time_xgb = xgb.DMatrix(as.matrix(X_val_bor_time))
-# train_combined_bor_time = train[, c(boruta_time_features, "readm_flag")]
-
-```
-Base with time data set
-
-```{r}
-# X_train_time = train %>% select(-readm_flag)
-# X_train_time_xgb = xgb.DMatrix(as.matrix(X_train_time))
-# X_val_time = val %>% select(-readm_flag)
-# X_val_time_xgb = xgb.DMatrix(as.matrix(X_val_time))
-# train_combined_time = train
-```
 
 
 ```{r}
