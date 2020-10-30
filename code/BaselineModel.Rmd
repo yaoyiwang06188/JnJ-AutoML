@@ -107,6 +107,7 @@ df_medicare <- df_medicare[, !(colnames(df_medicare) %in% drops)]
 
 
 # Remove collinear features (184 - 150 = 32)
+
 # also remove county related information
 drops <- c('cci_score_1825_days_b','elix_score_1825_days_b',  'fci_score_1825_days_b', 'follow_up_end_dt', 'follow_up_end_dt_365','ppx_desc', 'pdx_desc','hospital_name', 'fy', 'yr_adm', 'yr_disch', 'prvdr_state_name', 'prvdr_state_cd', 'prvdr_ssa_county_code', 'prov_vol_per_month', 'prvdr_home_hha_vol_month', 'prvdr_home_hha_vol_per', 'phy_vol_month', 'prvdr_urspa', 'prvdr_cbsa', 'prvdr_cbsa_desc', 'prvdr_msa','prvdr_msa_desc', "elix_cong_heart_fail_1825_days_b", "elix_periph_vas_dis_1825_days_b", "elix_paralysis_1825_days_b", "elix_copd_1825_days_b", "elix_aids_1825_days_b", "elix_met_cancer_1825_days_b", "fci_heart_attack_1825_days_b", "fci_obesity_1825_days_b", 'nch_bene_dschrg_dt','county', 'bene_cnty_cd')
 
@@ -131,8 +132,6 @@ df_medicare <- df_medicare %>% drop_na(prvdr_num,prvdr_teaching_status,ma_pen_pe
 ```
 
 
-
-
 ```{r}
 # The following code is to check whether there is still missing value left
 # t <- colSums(is.na(df_medicare))
@@ -152,6 +151,7 @@ keep = df_medicare %>%
   summarise(total = n(), re_pos = sum(readm_flag), re_neg = total - re_pos, er_pos = sum(er_90days), er_neg = total - er_pos, mor_pos = sum(mortality_90), mor_neg = total - mor_pos) %>% 
   filter(total > 99 & re_pos > 10 & re_neg > 10 & er_pos > 10 & er_neg > 10 & mor_pos > 10 & mor_neg > 10 ) %>% 
   pull(prvdr_num)
+
 hos_sample <- df_medicare %>% 
   filter(prvdr_num %in% keep)
 ```
@@ -201,11 +201,13 @@ hos_sample <- hos_sample %>%
 population_sample <- hos_sample
  
 # Remove columns leaking hospital information
+
 drops <- c('fci_arthritis_1825_days_b', 'fci_osteoporosis_1825_days_b', 'fci_asthma_1825_days_b', 'fci_copd_1825_days_b', 'fci_angina_1825_days_b', 'fci_cong_heart_fail_1825_days_b', 'fci_heart_attack_1825_days_b', 'fci_neur_dis_1825_days_b', 'fci_stroke_1825_days_b', 'fci_diabetes_1825_days_b', 'fci_perif_vasc_dis_1825_days_b', 'fci_upper_gi_1825_days_b', 'fci_depression_1825_days_b', 'fci_anxiety_panic_1825_days_b', 'fci_visual_imp_1825_days_b', 'fci_hear_imp_1825_days_b', 'fci_ddd_1825_days_b', 'fci_obesity_1825_days_b', 'prvdr_state_cd', 'prov_vol_annual', 'prov_vol_per_month', 'prvdr_home_hha_vol', 'prvdr_home_hha_vol_month', 'prvdr_home_hha_vol_per', 'phy_vol_annual', 'phy_vol_month', 'op_phy_cum_exp', 'provider_type', 'hospital_name', 'prvdr_ssa_county_code', 'prvdr_urgeo', 'prvdr_urspa', 'prvdr_wi', 'prvdr_cola', 'prvdr_resident_to_bed_ratio', 'prvdr_rday', 'prvdr_beds', 'prvdr_dshpct', 'prvdr_dshopg', 'prvdr_dshcpg', 'prvdr_state_name', 'prvdr_state_ab', 'prvdr_div_code', 'prvdr_division', 'prvdr_region_cd', 'prvdr_region','county', 'bpci_lejr', 'cjr', 'bpci_ami_cabg', 'ami_cabg', 'prvdr_cbsa', 'prvdr_cbsa_desc', 'prvdr_msa', 'prvdr_msa_desc', 'prvdr_teaching_status', 'low_income_subsidy', 'prior_inp_only_los', 'prior_irf_los', 'prior_ltcf_los', 'prior_snf_los', 'prior_hha_visits', 'prior_out_visits', 'total_prior_los', 'poverty_per', 'grp_1', 'grp_2', 'grp_3', 'grp_4', 'grp_5', 'grp_6', 'grp_7', 'grp_8', 'grp_9', 'grp_10', 'unemp_percentage', 'no_of_snfs', 'ma_pen_percent', 'snf_per_capita')
 
 hos_sample <- hos_sample[, !(colnames(hos_sample) %in% drops)]
 
 ```
+
 ```{r}
 
 # Note all the Critical Access Hospitals has hospital name associate variables as N/A, such as prvdr_wi, prvdr_rday
@@ -265,7 +267,7 @@ population_sample[sapply(population_sample, is.character)] <- lapply(population_
 
 ```{r}
 # ----------------- 
-# train validation test split
+# train validation test split for population level
 # -----------------
 
 # we focus on readmission now. so we remove mortality and er_90days 
@@ -541,10 +543,11 @@ print(Sys.time()-st)
 
 ```{r}
 summary_result <- data.frame("Type" =model_X_types, "cv_f1" = cv_f1s, "val_f1" = val_f1s, "logloss" = loglosses, "AUC" = AUCs, "accuracy" = accuracys, stringsAsFactors = FALSE)
+summary_result[summary_result == 'NaN'] <- 0
 best_cvf1 = max(summary_result$val_f1)
 best_index = which.max(summary_result$val_f1)
 best_model_name = model_X_types[best_index]
-best_model = models[[best_index]]
+# best_model = models[[best_index]]
 
 print(paste("The best model is:", best_model_name, "with validation f1 score:", best_cvf1, sep = " "))
 ```
