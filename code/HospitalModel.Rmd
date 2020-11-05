@@ -554,7 +554,7 @@ hospital_model = function(train, val, imbalance = "NA"){
 best_models = list()
 hos_results = list()
 
-for(n in n_of_hos){
+for(h in n_of_hos){
   train = trains[[h]]
   val = vals[[h]]
   test = vals[[h]]
