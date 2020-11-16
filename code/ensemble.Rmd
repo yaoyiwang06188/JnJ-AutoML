@@ -510,9 +510,9 @@ ensemble = function(p_model, h_model, h_model_var, df, ptype, htype, as){
     ph_prob = a*p_prob + (1-a)*h_prob
     ph_pred = floor(ph_prob + 0.5) #use floor to avoid round(0.5) = 0 issue
     en_f1 = c(en_f1, unbias_f1(ph_pred, y_val))
-    lglosses = c(LogLoss(ph_prob, y_val), lglosses  )
-    aucs = c(AUC(ph_prob, y_val), aucs)
-    accs = c(Accuracy(ph_pred, y_val), accs)
+    lglosses = c(lglosses, LogLoss(ph_prob, y_val))
+    aucs = c(aucs, AUC(ph_prob, y_val))
+    accs = c(accs, Accuracy(ph_pred, y_val))
   }
   #return(en_f1)
   return(data.frame("alpha" =as, "en_f1" = en_f1, "en_lgloss" = lglosses, "en_auc" = aucs, "en_acc" = accs))
@@ -530,14 +530,13 @@ ensemble = function(p_model, h_model, h_model_var, df, ptype, htype, as){
 
 #last year top 10, only 9 due to time of discharge is remove due to collinearity
 
-hospital_model = function(train, val, imbalance = "NA"){
+hospital_model = function(train, val, imbalance = "NA", population_model){
   #alpha to try for ensemble method
   as = c(0.0, 1, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
   #population models
   
   original_train = nrow(train)
   pop_val = val
-  population_model = readRDS(file = "rf_basetime_100.Rds")
   ptype ="rf"
   pop_yval = pop_val$target
   pop_Xval = pop_val[, population_model$coefnames]
@@ -593,7 +592,9 @@ hospital_model = function(train, val, imbalance = "NA"){
   print(Sys.time() - k_start_time)
   
   #training models
-  model_types = c("rlg", "rf", "xgb")
+  model_types = c("rlg", "rf", "xgb") #Mike run this version
+  #model_types = c("rf", "xgb", "rlg") #Qiang run this version
+  #model_types = c("xgb", "rlg", "rf") #Zining run this version
   X_types = c("Boruta", "Boruta_time", "2019_top10", "Kbest")
   model_X_types = c()
   cv_f1s = c()
@@ -612,8 +613,10 @@ hospital_model = function(train, val, imbalance = "NA"){
   rt= c()
   rt_unit = c()
   population_vf1s = c()
-  mark = -2
+  best_hvalf1 = -2
+  h_tiebreaker_lg = 1000
   best_envalf1 = -2
+  en_tiebreaker_lg = 1000
 
   for(type in model_types){
     for(i in c(1:4)){
@@ -657,16 +660,24 @@ hospital_model = function(train, val, imbalance = "NA"){
       en_accuracys = c(en_accuracys, en_val_result$en_acc[max_index])
       
       #select best hospital model base on hospital vf1 score
-      if(sc[2] > mark){
-        mark = sc[2]
-        best_model = model
+      if(sc[2] >= best_hvalf1){
+        if(sc[3] < h_tiebreaker_lg){
+          best_hvalf1 = sc[2]
+          best_model = model
+          h_tiebreaker_lg = sc[3]
+          best_hos_model_type = model_X_type
+        }
       }
       
       #select best hospital model base on ensemble valf1 score
-      if(en_f1_temp > best_envalf1){
-        best_envalf1 = en_f1_temp
-        best_enmodel = model
-        best_alpha = a
+      if(en_f1_temp >= best_envalf1){
+        if(en_val_result$en_lgloss[max_index] < en_tiebreaker_lg){
+          best_envalf1 = en_f1_temp
+          best_enmodel = model
+          best_alpha = a
+          en_tiebreaker_lg = en_val_result$en_lgloss[max_index]
+          best_en_model_type = model_X_type
+        }
       }
     }
   }
@@ -698,17 +709,20 @@ hospital_model = function(train, val, imbalance = "NA"){
   best_model_name = model_X_types[best_index]
     
   print(paste("The best model is:", best_model_name, "with validation f1 score:", best_cvf1, sep = " "))
-  result = list("result_df" = summary_result, "best_hos_model" = best_model, "boruta" = boruta_features, "k_best" = k_best_features, "best_hos_model_en" = best_enmodel, "alpha" = best_alpha)
+  result = list("result_df" = summary_result, "best_hos_model" = best_model, "boruta" = boruta_features, "k_best" = k_best_features, "best_hos_model_en" = best_enmodel, "alpha" = best_alpha, "best_hos_model_type" = best_hos_model_type, "best_en_model_type" = best_en_model_type)
+  return(result)
 }
 ```
 
 ```{r message=FALSE}
 #testing for single hospital
-# train = trains[[8]]
-# val = vals[[8]]
-# result = hospital_model(train, val, imbalance = "up")
+# train = trains[["010001"]]
+# val = vals[["010001"]]
+# result = hospital_model(train, val, imbalance = "up", p_model)
 ```
-
+```{r}
+p_model   = readRDS(file = "rf_basetime_100.Rds")
+```
 
 ```{r message=FALSE}
 #for loop to capture all hospital
@@ -718,52 +732,68 @@ hos_results = list()
 n_of_hos = read.csv("keep_re_target66", colClasses=c("x"="character"))
 n_of_hos = n_of_hos$x
 
-#Zining second half please use c(185:367)
-half_n_of_hos = n_of_hos[c(1:184)]
+#Mike use this version
+i = 121 #Mike
+e = 240 #Mike
 
+#Qiang use this version
+# i = 1
+# e = 120
 
-for(h in half_n_of_hos){
+#Zining use this version
+# i = 241
+# e = 367
+for(h in n_of_hos[i:e]){
+  rds = list()
   train = trains[[h]]
   val = vals[[h]]
-  result = hospital_model(train, val, imbalance = "up")
-  hos_results[[h]] = result
+  result = hospital_model(train, val, imbalance = "up", p_model)
+  rds[[h]] = result
+  #hos_results[[h]] = result
+  filename =paste("hos_results_new/hos_results_new_", i, ".Rds", sep = "")
+  saveRDS(rds, filename)
+  i = i+1
 }
 ed = Sys.time()
 print(ed - st)
-saveRDS(hos_results, 'hos_results1_184.Rds')
+#saveRDS(hos_results, 'hos_results121_140_new.Rds')
+```
 
-#create data frame for plotting
 
-h_ns_best_hmodel = hos_results[[1]]$result_df[0,]
-h_ns_best_enmodel = hos_results[[1]]$result_df[0,]
-for(h_result in hos_results){
-  h_result_df = h_result$result_df
-  best_h_indexes = which(h_result_df$val_f1 %in% max(h_result_df$val_f1))
-  if(length(best_h_indexes > 1)){
-    tiebreaker = h_result$result_df[best_h_indexes, ]
-    best_h_index = which.min(tiebreaker$logloss)
-    h_ns_best_hmodel = rbind(h_ns_best_hmodel, tiebreaker[best_h_index,])
-  }else{
-    best_h_index = best_h_indexes[1]
-    h_ns_best_hmodel = rbind(h_ns_best_hmodel, h_result_df[best_h_index,])
-  }
-  best_en_indexes = which(h_result_df$ensemble_valf1 %in% max(h_result_df$ensemble_valf1))
-  if(length(best_en_indexes > 1)){
-    tiebreaker = h_result$result_df[best_en_indexes, ]
-    best_en_index = which.min(tiebreaker$en_logloss)
-    h_ns_best_enmodel = rbind(h_ns_best_enmodel, tiebreaker[best_en_index,])
-  }else{
-    best_en_index = best_en_indexes[1]
-    h_ns_best_enmodel = rbind(h_ns_best_enmodel, h_result_df[best_en_index,])
-  }
-}
-
-#result based on max hospital validation f1 score
-h_ns_best_hmodel = cbind(half_n_of_hos, h_ns_best_hmodel)
-#result based on max ensemble validation f1 score
-h_ns_best_enmodel = cbind(half_n_of_hos, h_ns_best_enmodel)
-write.csv(x = h_ns_best_hmodel, file = "h_ns_best_hmodel")
-write.csv(x = h_ns_best_enmodel, file = "h_ns_best_enmodel")
+```{r}
+# 
+# #create data frame for plotting
+# 
+# h_ns_best_hmodel = hos_results[[1]]$result_df[0,]
+# h_ns_best_enmodel = hos_results[[1]]$result_df[0,]
+# for(h_result in hos_results){
+#   h_result_df = h_result$result_df
+#   best_h_indexes = which(h_result_df$val_f1 %in% max(h_result_df$val_f1))
+#   if(length(best_h_indexes > 1)){
+#     tiebreaker = h_result$result_df[best_h_indexes, ]
+#     best_h_index = which.min(tiebreaker$logloss)
+#     h_ns_best_hmodel = rbind(h_ns_best_hmodel, tiebreaker[best_h_index,])
+#   }else{
+#     best_h_index = best_h_indexes[1]
+#     h_ns_best_hmodel = rbind(h_ns_best_hmodel, h_result_df[best_h_index,])
+#   }
+#   best_en_indexes = which(h_result_df$ensemble_valf1 %in% max(h_result_df$ensemble_valf1))
+#   if(length(best_en_indexes > 1)){
+#     tiebreaker = h_result$result_df[best_en_indexes, ]
+#     best_en_index = which.min(tiebreaker$en_logloss)
+#     h_ns_best_enmodel = rbind(h_ns_best_enmodel, tiebreaker[best_en_index,])
+#   }else{
+#     best_en_index = best_en_indexes[1]
+#     h_ns_best_enmodel = rbind(h_ns_best_enmodel, h_result_df[best_en_index,])
+#   }
+# }
+# 
+# #result based on max hospital validation f1 score
+# h_ns_best_hmodel = cbind(half_n_of_hos, h_ns_best_hmodel)
+# #result based on max ensemble validation f1 score
+# h_ns_best_enmodel = cbind(half_n_of_hos, h_ns_best_enmodel)
+# write.csv(x = h_ns_best_hmodel, file = "h_ns_best_hmodel_121_140_new")
+# write.csv(x = h_ns_best_enmodel, file = "h_ns_best_enmodel_121_140_new")
 ```
 
 
