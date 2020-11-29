@@ -203,7 +203,10 @@ df_medicare[df_medicare == 'NA'] <- NA
 df_medicare <- df_medicare %>% drop_na(prvdr_num,prvdr_teaching_status,ma_pen_percent,prvdr_rday,ami_cabg)
 ```
 
-
+```{r}
+rm(list=setdiff(ls(), "df_medicare")) #command to clean the environment list
+gc()
+```
 
 
 ```{r}
@@ -617,7 +620,8 @@ hospital_model = function(train, val, imbalance = "NA", population_model){
   h_tiebreaker_lg = 1000
   best_envalf1 = -2
   en_tiebreaker_lg = 1000
-
+  all_models = list()
+  j = 1
   for(type in model_types){
     for(i in c(1:4)){
       model_X_type = paste(type, X_types[i], sep= "_")
@@ -634,6 +638,8 @@ hospital_model = function(train, val, imbalance = "NA", population_model){
       st_i= Sys.time()
       #train the hospital level model
       model = fitModel(train_df, type)
+      all_models[[j]] = model
+      j = j+1
       t = Sys.time()-st_i
       #record the scoring result
       rt_unit = c(rt_unit, units(t))
@@ -660,7 +666,12 @@ hospital_model = function(train, val, imbalance = "NA", population_model){
       en_accuracys = c(en_accuracys, en_val_result$en_acc[max_index])
       
       #select best hospital model base on hospital vf1 score
-      if(sc[2] >= best_hvalf1){
+      if(sc[2] > best_hvalf1){
+          best_hvalf1 = sc[2]
+          best_model = model
+          h_tiebreaker_lg = sc[3]
+          best_hos_model_type = model_X_type
+      }else if(sc[2] == best_hvalf1){
         if(sc[3] < h_tiebreaker_lg){
           best_hvalf1 = sc[2]
           best_model = model
@@ -670,7 +681,13 @@ hospital_model = function(train, val, imbalance = "NA", population_model){
       }
       
       #select best hospital model base on ensemble valf1 score
-      if(en_f1_temp >= best_envalf1){
+      if(en_f1_temp > best_envalf1){
+          best_envalf1 = en_f1_temp
+          best_enmodel = model
+          best_alpha = a
+          en_tiebreaker_lg = en_val_result$en_lgloss[max_index]
+          best_en_model_type = model_X_type
+      }else if(en_f1_temp == best_envalf1){        
         if(en_val_result$en_lgloss[max_index] < en_tiebreaker_lg){
           best_envalf1 = en_f1_temp
           best_enmodel = model
@@ -709,7 +726,7 @@ hospital_model = function(train, val, imbalance = "NA", population_model){
   best_model_name = model_X_types[best_index]
     
   print(paste("The best model is:", best_model_name, "with validation f1 score:", best_cvf1, sep = " "))
-  result = list("result_df" = summary_result, "best_hos_model" = best_model, "boruta" = boruta_features, "k_best" = k_best_features, "best_hos_model_en" = best_enmodel, "alpha" = best_alpha, "best_hos_model_type" = best_hos_model_type, "best_en_model_type" = best_en_model_type)
+  result = list("result_df" = summary_result, "best_hos_model" = best_model, "boruta" = boruta_features, "k_best" = k_best_features, "best_hos_model_en" = best_enmodel, "alpha" = best_alpha, "best_hos_model_type" = best_hos_model_type, "best_en_model_type" = best_en_model_type, "all_models"=all_models)
   return(result)
 }
 ```
@@ -721,10 +738,16 @@ hospital_model = function(train, val, imbalance = "NA", population_model){
 # result = hospital_model(train, val, imbalance = "up", p_model)
 ```
 ```{r}
-p_model   = readRDS(file = "rf_basetime_100.Rds")
+p_model   = readRDS(file = "rf_basetime_100_4.Rds")
+```
+```{r}
+saveRDS(trains, "trains_RA367")
+saveRDS(vals, "vals_RA367")
+saveRDS(tests, "tests_RA367")
 ```
 
 ```{r message=FALSE}
+#rm(list=setdiff(ls(), c("trains", "vals", "tests", "p_model"))) command to clean the environment list
 #for loop to capture all hospital
 st = Sys.time()
 hos_results = list()
@@ -733,8 +756,8 @@ n_of_hos = read.csv("keep_re_target66", colClasses=c("x"="character"))
 n_of_hos = n_of_hos$x
 
 #Mike use this version
-i = 121 #Mike
-e = 240 #Mike
+i = 2 #Mike
+e = 367 #Mike
 
 #Qiang use this version
 # i = 1
@@ -750,7 +773,7 @@ for(h in n_of_hos[i:e]){
   result = hospital_model(train, val, imbalance = "up", p_model)
   rds[[h]] = result
   #hos_results[[h]] = result
-  filename =paste("hos_results_new/hos_results_new_", i, ".Rds", sep = "")
+  filename =paste("hos_results_newpop/hos_results_new_", i, ".Rds", sep = "")
   saveRDS(rds, filename)
   i = i+1
 }
