@@ -12,6 +12,5 @@ David Knowles (CU-DSI)
 # Group Members  
 Zining Fan (CU-DSI)  
 Mike Wang (CU-DSI)  
-Mutian Wang (CU-DSI)  
 Siyuan Wang (CU-DSI)  
 Qiang Zhao (CU-DSI) 
