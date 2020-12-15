@@ -1,0 +1,301 @@
+---
+title: "overall_validation"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(stringr)
+library(GGally)
+library(parcoords)
+library(tidyr)
+library(r2d3)
+library(dplyr)
+library(readr)
+library(gridExtra)
+library(plotly)
+library(ade4)
+library(data.table)
+library(caret)
+library(devtools) #inorder to use install_version
+#most current version of xgboost can't be installed on the Rstudio server, thus
+#install the older version: xgboost_0.90.0.2.tar.gz	2019-08-01 21:20	826K
+#install_version("xgboost", version = "0.90.0.2", repost = "http://cran.us.r-project.org")
+library(xgboost)
+library(MLmetrics)#for calculating F1-score
+library(ranger) #fast random forest
+library(Boruta)
+library(FSinR)
+#rm(list=setdiff(ls(), "data")) command to clean the environment list
+```
+
+```{r}
+# ----------------- 
+# F1 score function
+# -----------------
+#Note if TP + FP ==0 (when we all predict 0), precision is undefined.
+#Precision = TP / (TP+FP)
+#Recall = TP/(TP + FN)
+#if TP + FN == 0 (when sample only have 0), recall is undefined
+#F1 = 2 * Precision * Recall/ (Precision + Recall) -> undefined if TP = 0
+# ConfusionMatrix
+#         ACTUAL
+#        1     0
+# P    +----+----+
+# R  1 | TP | FP |
+# E    +----+----+
+# D  0 | FN | TN |
+#      +----+----+
+# Since if we predict all as Class 0 or as Class 1, F1_score will return error, plus we don't want a model that predict all as 0 or 1, thus set its f1 score = -1 indicate bad model. If F1_Score returns an NaN, simply means TP = 0, thus we assigned f1_score = 0 in this case.
+unbias_f1 = function(pred, yval){
+  f1 = -1
+  if (sum(pred)!= 0 & sum(pred)!= length(pred)){
+    f1 = F1_Score( y_pred = pred, y_true = yval, positive = 1)
+  }else if(sum(pred) == sum(yval)){
+    f1 = 1.1
+  }
+  if(is.na(f1)){
+    f1 = 0
+  }
+  return(f1)
+}
+# ----------------- 
+# Prediction function
+# -----------------
+#scoring function returns a list of best Cross_Validation Score, Validation Set F1 scores, Log loss, AUC, and Accuracy with input model, X validation and y validation.
+scores = function(pre_class, pre_prob, y_val){
+  return(c(unbias_f1(pre_class, y_val), LogLoss(pre_prob, y_val), AUC(pre_prob, y_val), Accuracy(pre_class, y_val), PRAUC(pre_prob, y_val), Precision(y_val, pre_class, positive = 1), Recall(y_val, pre_class, positive = 1)))
+}
+```
+
+
+
+```{r}
+
+#read in all the hospital's ensemble and hospital model RDS and combine them to one
+hos_results_dir = dir("hos_results_newpop/")
+myreadRDS = function(x){
+  temp = readRDS(x)
+  h = names(temp)[1]
+  result = list()
+  result[[h]] = temp[[1]][c(1:8)]
+  return(result)
+}
+model_all = do.call(c, lapply(paste("hos_results_newpop/", hos_results_dir, sep=""), myreadRDS))
+saveRDS(model_all, "hos_results_newpop_all.Rds")
+```
+
+
+
+```{r}
+
+n_of_hos = names(model_all)[1]
+all = model_all[[1]]$result_df[1,]
+all = cbind(n_of_hos, all)
+all = all[0,]
+
+n_of_hos = names(model_all)
+i = 1
+for(h_result in model_all){
+  h_result_df = h_result$result_df
+  prvdr_num = rep(n_of_hos[i], nrow(h_result_df))
+  h_result_df = cbind(prvdr_num, h_result_df)
+  all = rbind(all, h_result_df)
+  i = i+1
+}
+```
+
+
+```{r}
+#get the best hospital model and ensemble model from the result
+#for new (with tiebreaker lgloss)
+#initial empty dataframe with same number of columns
+h_all = model_all[[1]]$result_df[0,]
+en_all = model_all[[1]]$result_df[0,]
+for(h_result in model_all){
+  h_result_df = h_result$result_df
+  best_h_indexes = which(h_result_df$val_f1 %in% max(h_result_df$val_f1))
+  if(length(best_h_indexes > 1)){
+    tiebreaker = h_result$result_df[best_h_indexes, ]
+    best_h_index = which.min(tiebreaker$logloss)
+    h_all = rbind(h_all, tiebreaker[best_h_index,])
+  }else{
+    best_h_index = best_h_indexes[1]
+    h_all = rbind(h_all, h_result_df[best_h_index,])
+  }
+  best_en_indexes = which(h_result_df$ensemble_valf1 %in% max(h_result_df$ensemble_valf1))
+  if(length(best_en_indexes > 1)){
+    tiebreaker = h_result$result_df[best_en_indexes, ]
+    best_en_index = which.min(tiebreaker$en_logloss)
+    en_all = rbind(en_all, tiebreaker[best_en_index,])
+  }else{
+    best_en_index = best_en_indexes[1]
+    en_all = rbind(en_all, h_result_df[best_en_index,])
+  }
+}
+prvdr_num = names(model_all)
+#result based on max hospital validation f1 score
+h_all = cbind(prvdr_num, h_all)
+#result based on max ensemble validation f1 score
+en_all = cbind(prvdr_num, en_all)
+
+write.csv(x = all, file = "model_summary_all")
+write.csv(x = h_all, file = "h_ns_best_hmodel_all")
+write.csv(x = en_all, file = "h_ns_best_enmodel_all")
+```
+
+
+```{r}
+p_model = readRDS(file = "rf_basetime_100_4.Rds")
+model_all = readRDS(file = "hos_results_newpop_all.Rds")
+h_all = read.csv("h_ns_best_hmodel_all", colClasses=c("prvdr_num"="character"))
+en_all = read.csv("h_ns_best_enmodel_all", colClasses=c("prvdr_num"="character"))
+all = read.csv("model_summary_all", colClasses=c("prvdr_num"="character"))
+```
+
+```{r}
+#get the population, hospital, ensemble model's validation scores
+input_data = function(besttype, boruta_f, k_best_f, df){
+  top_10_2019 = c('prior_inp_only_los', 'total_prior_los', 'days_before_admsn', 'prior_hha_visits', 'clm_utlztn_day_cnt',  'index_los', 'clm_pps_cptl_drg_wt_num', 'prior_out_visits', 'prior_snf_los')
+  time_feature = c('month','week_of_dates','days_before_admsn')
+  if(grepl("Boruta_time", besttype, fixed = TRUE)){
+    df = df[,c(boruta_f, time_feature)]
+  }else if(grepl("Boruta", besttype, fixed = TRUE)){
+    df = df[, boruta_f]
+  }else if(grepl("2019_top10", besttype, fixed = TRUE)){
+    df = df[, top_10_2019]
+  }else{
+    df = df[,k_best_f]
+  }
+  if(grepl("xgb", besttype, fixed = TRUE)){
+     df = xgb.DMatrix(as.matrix(df))
+  }
+  return(df)
+}
+p_probs = c()
+p_preds = c()
+h_probs = c()
+h_preds = c()
+en_probs = c()
+en_preds = c()
+runi_probs = c()
+runi_preds = c()
+y_vals = c()
+
+for(h in n_of_hos){#c("180067")){#} 
+  h_model = model_all[[h]]$best_hos_model
+  en_model = model_all[[h]]$best_hos_model_en
+  a = model_all[[h]]$alpha
+  h_type = h_all$Type[h_all$prvdr_num == h]
+  en_type = en_all$Type[en_all$prvdr_num == h]
+  boruta_f = model_all[[h]]$boruta
+  k_best_f = model_all[[h]]$k_best
+  
+  df = vals[[h]]
+  y_val = df$target
+  X_val_p = df[, p_model$coefnames]
+  X_val_h = input_data(h_type, boruta_f, k_best_f, df)
+  X_val_en = input_data(en_type, boruta_f, k_best_f, df)
+ 
+  p_prob <- predict(p_model, newdata = X_val_p, type = "prob")$Class_1
+  h_prob <- predict(h_model, newdata = X_val_h, type = "prob")$Class_1
+  en_prob <- predict(en_model, newdata = X_val_en, type = "prob")$Class_1
+  en_prob = a*p_prob + (1-a)*en_prob
+  runi_prob = runif(length(y_val), 0,1)
+  en_pred = floor(en_prob + 0.5)
+  p_pred = floor(p_prob + 0.5)
+  h_pred = floor(h_prob + 0.5)
+  runi_pred = floor(runi_prob + 0.5)
+  
+  y_vals =c(y_vals, y_val)
+  p_probs = c(p_probs, p_prob)
+  h_probs = c(h_probs, h_prob)
+  en_probs = c(en_probs, en_prob)
+  p_preds = c(p_preds, p_pred)
+  h_preds = c(h_preds, h_pred)
+  en_preds = c(en_preds, en_pred)
+  runi_probs = c(runi_probs, runi_prob)
+  runi_preds = c(runi_preds, runi_pred)
+  
+}
+
+p_scores = scores(p_preds, p_probs, y_vals)
+h_scores = scores(h_preds, h_probs, y_vals)
+en_scores = scores(en_preds, en_probs, y_vals)
+runi_scores = scores(runi_preds, runi_probs, y_vals)
+
+print(p_scores)
+print(h_scores)
+print(en_scores)
+print(runi_scores)
+val_result = data.frame("score_type" = c("validation F1 Score",  "Log Loss", "AUC", "Accuracy", "PRAUC", "Prcesion", "Recall"),"pop_model" =p_scores, "hos_model" = h_scores, "en_model" = en_scores, "random_guessing" = runi_scores)
+
+val_result_t = data.frame(t(val_result[-1]))
+colnames(val_result_t) = val_result[, 1]
+write.csv(val_result_t, "acc_val_result")
+```
+```{r}
+#get the population, hospital, ensemble model's test scores
+p_probs = c()
+p_preds = c()
+h_probs = c()
+h_preds = c()
+en_probs = c()
+en_preds = c()
+runi_probs = c()
+runi_preds = c()
+y_vals = c()
+
+for(h in n_of_hos){#c("180067")){#} 
+  h_model = model_all[[h]]$best_hos_model
+  en_model = model_all[[h]]$best_hos_model_en
+  a = model_all[[h]]$alpha
+  h_type = h_all$Type[h_all$prvdr_num == h]
+  en_type = en_all$Type[en_all$prvdr_num == h]
+  boruta_f = model_all[[h]]$boruta
+  k_best_f = model_all[[h]]$k_best
+  
+  df = tests[[h]]
+  y_val = df$target
+  X_val_p = df[, p_model$coefnames]
+  X_val_h = input_data(h_type, boruta_f, k_best_f, df)
+  X_val_en = input_data(en_type, boruta_f, k_best_f, df)
+ 
+  p_prob <- predict(p_model, newdata = X_val_p, type = "prob")$Class_1
+  h_prob <- predict(h_model, newdata = X_val_h, type = "prob")$Class_1
+  en_prob <- predict(en_model, newdata = X_val_en, type = "prob")$Class_1
+  en_prob = a*p_prob + (1-a)*en_prob
+  runi_prob = runif(length(y_val), 0,1)
+  en_pred = floor(en_prob + 0.5)
+  p_pred = floor(p_prob + 0.5)
+  h_pred = floor(h_prob + 0.5)
+  runi_pred = floor(runi_prob + 0.5)
+  
+  y_vals =c(y_vals, y_val)
+  p_probs = c(p_probs, p_prob)
+  h_probs = c(h_probs, h_prob)
+  en_probs = c(en_probs, en_prob)
+  p_preds = c(p_preds, p_pred)
+  h_preds = c(h_preds, h_pred)
+  en_preds = c(en_preds, en_pred)
+  runi_probs = c(runi_probs, runi_prob)
+  runi_preds = c(runi_preds, runi_pred)
+  
+}
+
+p_scores = scores(p_preds, p_probs, y_vals)
+h_scores = scores(h_preds, h_probs, y_vals)
+en_scores = scores(en_preds, en_probs, y_vals)
+runi_scores = scores(runi_preds, runi_probs, y_vals)
+
+print(p_scores)
+print(h_scores)
+print(en_scores)
+print(runi_scores)
+test_result = data.frame("score_type" = c("test F1 Score", "Log Loss", "AUC", "Accuracy", "PRAUC", "Prcesion", "Recall"),"pop_model" =p_scores, "hos_model" = h_scores, "en_model" = en_scores, "random_guessing" = runi_scores)
+test_result_t = data.frame(t(test_result[-1]))
+colnames(test_result_t) = test_result[, 1]
+write.csv(test_result_t, "acc_test_result")
+```
+

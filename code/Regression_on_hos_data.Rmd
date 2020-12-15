@@ -1,0 +1,733 @@
+---
+
+title: "Untitled"
+
+output: html_document
+
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(stringr)
+library(GGally)
+library(parcoords)
+library(tidyr)
+library(r2d3)
+library(dplyr)
+library(readr)
+library(gridExtra)
+library(plotly)
+library(ade4)
+library(data.table)
+library(caret)
+library(devtools) #inorder to use install_version
+#most current version of xgboost can't be installed on the Rstudio server, thus
+#install the older version: xgboost_0.90.0.2.tar.gz	2019-08-01 21:20	826K
+#install_version("xgboost", version = "0.90.0.2", repost = "http://cran.us.r-project.org")
+library(xgboost)
+library(MLmetrics)#for calculating F1-score
+library(ranger) #fast random forest
+library(Boruta)
+library(FSinR)
+#rm(list=setdiff(ls(), "data")) command to clean the environment list
+library(glmnet)
+```
+
+
+```{r}
+
+#install.packages('RJDBC')
+
+## --------------------------------
+## Sets Java Home
+## --------------------------------
+if (Sys.getenv("JAVA_HOME")!="")  Sys.setenv(JAVA_HOME="")
+
+## --------------------------------
+## Loads libraries
+## --------------------------------
+library(rJava)
+options(java.parameters = "-Xmx8048m")
+library(RJDBC)
+library(DBI)
+
+## --------------------------------
+## Sets Java Home
+## --------------------------------
+if (Sys.getenv("JAVA_HOME")!="")
+  Sys.setenv(JAVA_HOME="")
+
+
+## --------------------------------
+## Loads libraries
+## --------------------------------
+library(rJava)
+options(java.parameters = "-Xmx8048m")
+library(RJDBC)
+library(DBI)
+
+## --------------------------------
+## General Variables
+## --------------------------------
+redShiftDriver <- JDBC("com.amazon.redshift.jdbc41.Driver", "RedshiftJDBC41-1.2.8.1005.jar", identifier.quote="`")
+# put Redshift jar file in your home directory
+resultSet <- data.frame()
+username <- "zfan4"               ## Set VPCx / Redshift username - this is your J&J userID, for example mine is stong2  
+password <- "19A3#a39F7py"            ## Set VPCx / Redshift password - this is the password you got from an encrypted email
+rhealthDBName <- "saf"                ## Set dataset you want to connect to (full list provided here:  https://jnj.sharepoint.com/sites/PHM-GCSP-RND/RWE/Pages/rHEALTH-Database-Connectivity.aspx)
+
+## --------------------------------
+## Connection (do not change)
+## --------------------------------
+connectionString <- paste("jdbc:redshift://rhealth-prod-4.cldcoxyrkflo.us-east-1.redshift.amazonaws.com:5439/", rhealthDBName,"?ssl=true&sslfactory=com.amazon.redshift.ssl.NonValidatingFactory", sep="")
+
+conn <- dbConnect(redShiftDriver, connectionString, username, password)
+
+# dbListTables(conn)
+
+res <- dbSendQuery(conn,'select * from saf.scratch_ctsaf2.np_col_hipfx_ads_v9') ## CTSAF2 is my scratch space
+data <- fetch(res,n = -1) 
+
+```
+
+
+
+```{r}
+rm(list=setdiff(ls(), "data"))
+gc()
+df_medicare <- data
+dim(df_medicare)
+```
+
+
+
+```{r}
+#----------------
+# Data Cleaning
+#----------------
+# Remove target information (247 -184 = 63)
+drops <- c('mortality_365', 'readm_flag_365', 'er_365days', 're_claim_no',  're_clm_admsn_dt', 're_nch_bene_dschrg_dt','re_prvdr_num', 're_clm_utlztn_day_cnt', 're_clm_pmt_amt', 're_pdx', 're_ppx', 're_adm_source', 're_disc_status', 're_pdx_desc', 're_ppx_desc', 're_clm_admsn_dt_365', 're_nch_bene_dschrg_dt_365', 're_prvdr_num_365', 're_clm_utlztn_day_cnt_365', 're_clm_pmt_amt_365', 're_pdx_365', 're_ppx_365', 're_adm_source_365', 're_claim_no_365', 're_disc_status_365', 're_pdx_desc_365', 're_ppx_desc_365', 're_claim_no_365_up', 'readm_flag_365_up', 're_clm_admsn_dt_365_up', 're_nch_bene_dschrg_dt_365_up', 're_prvdr_num_365_up', 're_clm_utlztn_day_cnt_365_up', 're_clm_pmt_amt_365_up', 're_pdx_365_up', 're_ppx_365_up', 're_adm_source_365_up', 're_disc_status_365_up', 're_pdx_desc_365_up', 're_ppx_desc_365_up', 'er_claim_no_365', 'er_rev_cntr_dt_365', 'er_clm_thru_dt_365', 'er_prncpal_dgns_cd_365', 'er_pdx_desc_365', 'er_hcpcs_cd_365', 'er_hcpcs_desc_365', 'mortality_365_up', 'er_365days_up', 'er_claim_no_365_up', 'er_rev_cntr_dt_365_up', 'er_clm_thru_dt_365_up', 'er_prncpal_dgns_cd_365_up', 'er_pdx_desc_365_up', 'er_hcpcs_cd_365_up', 'er_hcpcs_desc_365_up','er_claim_no', 'er_rev_cntr_dt', 'er_clm_thru_dt','er_prncpal_dgns_cd','er_pdx_desc', 'er_hcpcs_cd', 'er_hcpcs_desc')
+df_medicare <- df_medicare[, !(colnames(df_medicare) %in% drops)]
+
+# Remove collinear features (184 - 149 = 33)
+# also remove county region related information
+
+drops <- c('cci_score_1825_days_b','elix_score_1825_days_b',  'fci_score_1825_days_b', 'follow_up_end_dt', 'follow_up_end_dt_365','ppx_desc', 'pdx_desc','hospital_name', 'fy', 'yr_adm', 'yr_disch', 'prvdr_state_name', 'prvdr_state_cd', 'prvdr_ssa_county_code', 'prov_vol_per_month', 'prvdr_home_hha_vol_month', 'prvdr_home_hha_vol_per', 'phy_vol_month', 'prvdr_urspa', 'prvdr_cbsa', 'prvdr_cbsa_desc', 'prvdr_msa','prvdr_msa_desc', "elix_cong_heart_fail_1825_days_b", "elix_periph_vas_dis_1825_days_b", "elix_paralysis_1825_days_b", "elix_copd_1825_days_b", "elix_aids_1825_days_b", "elix_met_cancer_1825_days_b", "fci_heart_attack_1825_days_b", "fci_obesity_1825_days_b", 'nch_bene_dschrg_dt','county', 'bene_cnty_cd',  'prvdr_division','prvdr_region','prvdr_region_cd', 'prvdr_div_code')
+
+df_medicare <- df_medicare[, !(colnames(df_medicare) %in% drops)]
+
+# Remove features same entry and unique entry (150 - 136 = 14)
+
+drops <- c('version_id', 'cont_enroll_flag_1825b_89f', 'valid_date_of_death_1825b_89f', 'hmo_enroll_flag_1825b_89f', 'hmo_enroll_flag_365f','cont_enroll_flag_365f','at_physn_upin', 'op_physn_upin', 'ot_physn_upin',
+
+           'desy_sort_key', 'claim_no', 'ot_physn_npi','at_physn_npi','op_physn_npi')
+
+df_medicare <- df_medicare[, !(colnames(df_medicare) %in% drops)]
+
+```
+
+
+
+```{r}
+
+#categorical regrouping
+
+#disc_status
+
+#Discharged to home/self-care
+home = c("01", "21")
+
+#Discharged to a hospital for care that wouldn’t be covered under this episode
+hospital_nc = c('04', '05', '63', '64', '65', '70')
+#Left against medical advice or discontinued care. Patients who leave before triage or seen by physician
+leave_early = '07'
+#remove as 20 indicates the death of patients
+remove = '20'
+df_medicare$disc_status[!(df_medicare$disc_status %in% c(hospital_nc, home, leave_early, remove))] = 'post_acute_care'
+df_medicare$disc_status[df_medicare$disc_status %in% home] = 'home'
+df_medicare$disc_status[df_medicare$disc_status %in% hospital_nc] = 'hospital_nc'
+df_medicare$disc_status[df_medicare$disc_status == leave_early] = 'leave_early'
+df_medicare$disc_status[df_medicare$disc_status == remove] = 'remove'
+#remove the row entries
+df_medicare = df_medicare %>% filter(disc_status != 'remove')
+
+#adm_source regroup less than 1% to other
+other = c("8", "9", "D", "E", "F")
+df_medicare$adm_source[df_medicare$adm_source %in% other] = "other"
+
+#prncpal_dgns_cd: keep first digit less than 1% to other
+df_medicare$prncpal_dgns_cd = substr(df_medicare$prncpal_dgns_cd, 1, 1)
+other = c("C", "Z", "D", "Q", "I", "R")
+df_medicare$prncpal_dgns_cd[df_medicare$prncpal_dgns_cd %in% other] = "other"
+
+#icd_prcdr_cd1
+hip = read.csv('icd_prcdr_cd1_hip', stringsAsFactors = FALSE)
+hip = hip$icd_prcdr_cd1
+df_medicare = df_medicare %>% filter(icd_prcdr_cd1 %in% hip)
+df_medicare$icd_prcdr_cd1 = substr(df_medicare$icd_prcdr_cd1, 5, 5)
+open = '0'
+unkown = c('1', 'Z')
+lap = c('3', '4', 'X')
+
+df_medicare$icd_prcdr_cd1[df_medicare$icd_prcdr_cd1 == open] = 'open'
+df_medicare$icd_prcdr_cd1[df_medicare$icd_prcdr_cd1 %in% unkown] = 'unkown'
+df_medicare$icd_prcdr_cd1[df_medicare$icd_prcdr_cd1 %in% lap] = 'lap'
+
+#clm_drg_cd no regroup
+
+#gndr_cd
+
+df_medicare$gndr_cd[df_medicare$gndr_cd == '1'] = 'M'
+df_medicare$gndr_cd[df_medicare$gndr_cd == '2'] = 'F'
+
+#bene_race
+
+df_medicare$bene_race_cd[!(df_medicare$bene_race_cd %in% c('1','2'))] = 'Other'
+df_medicare$bene_race_cd[df_medicare$bene_race_cd == '1'] = 'W'
+df_medicare$bene_race_cd[df_medicare$bene_race_cd == '2'] ='B'
+
+#drop disc_home_index as it duplicate with disc_status
+df_medicare = df_medicare %>% select(-disc_home_index)
+#provider_type no regroup needed
+
+#hospital_name already drop
+
+#prvdr_urgeo no regroup
+
+#prvdr_region dropped due to too high level info
+
+#prvdr_teaching_status no regroup
+
+#bene_state_cd as it highly correlate with prvdr_state_ab
+df_medicare = df_medicare %>% select(-bene_state_cd)
+
+#bene_cnty_cd drop due to too low level detail
+
+#prvdr_division drop due to too high level info
+
+#prvdr_state_ab no regroup
+
+#county drop due to too low level detail
+```
+
+
+```{r}
+
+# Remove missing value (426790 - 417395 = 9395)
+
+# remove rows with missing value
+df_medicare[df_medicare == -999] <- NA
+df_medicare[df_medicare == 'NA'] <- NA
+df_medicare <- df_medicare %>% drop_na(prvdr_num,prvdr_teaching_status,ma_pen_percent,prvdr_rday,ami_cabg)
+
+```
+
+```{r}
+
+# The following code is to check whether there is still missing value left
+t <- colSums(is.na(df_medicare))
+t[t!=0]
+
+```
+
+
+
+```{r}
+
+
+
+#-----------
+# Hospital level and Population level Sampling
+#-----------
+
+##removing hospital with less than 100 observations and less than 67 positive or negative value for the target variables for validation set purpose
+
+keep = df_medicare %>% 
+
+  group_by(prvdr_num) %>% 
+
+  summarise(total = n(), re_pos = sum(readm_flag), re_neg = total - re_pos, er_pos = sum(er_90days), er_neg = total - er_pos, mor_pos = sum(mortality_90), mor_neg = total - mor_pos) %>% filter(total > 99 & re_pos > 10 & re_neg > 10) %>% pull(prvdr_num)
+
+#write.csv(keep, file = "keep_re_target66")
+
+sample <- df_medicare %>% 
+  filter(prvdr_num %in% keep)
+
+```
+
+
+
+```{r}
+
+##########################################################################################################################################
+
+#one hot encoder
+
+one_hot_name = c('disc_status', 'icd_prcdr_cd1', 'clm_drg_cd', 'gndr_cd', 'bene_race_cd', 'provider_type', 'prvdr_urgeo', 'prvdr_teaching_status', 'prncpal_dgns_cd', 'adm_source')
+
+df_one_hot = sample[, one_hot_name]
+df_one_hot[] = lapply( df_one_hot, factor)
+levels(df_one_hot$provider_type) = c(levels(df_one_hot$provider_type), 'Hospitals participating in ORD demonstration project') #put it as only one type of hospital left
+
+one_hot_levels = lapply(df_one_hot, levels)
+saveRDS(one_hot_levels, "one_hot_levels.Rds")
+
+dmy <- dummyVars(" ~ .", data = df_one_hot)
+dmy_transform <- data.frame(predict(dmy, newdata = df_one_hot))
+
+sample = cbind(sample, dmy_transform)
+
+#drop original one hot cat column and one of dummy group for dummy class = 2
+
+drop1 = c('gndr_cd.M', 'provider_type.Hospitals.participating.in.ORD.demonstration.project','prvdr_teaching_status.No')
+
+sample = sample[, !(colnames(sample) %in% c(one_hot_name, drop1))]
+```
+
+```{r}
+# -------------------
+# feature engineering
+# -------------------
+
+# Add year for later use
+
+sample$clm_admsn_dt_year=substr(sample$clm_admsn_dt,1,4)
+sample$clm_admsn_dt = as.Date(sample$clm_admsn_dt)
+
+#remove date column as we have obtained the year info, specific date not so relevant when computing average info for hospital.
+
+drops = c('clm_admsn_dt')
+sample = sample[,!(colnames(sample) %in% drops)]
+
+#for later target encoder use
+
+sample[sapply(sample, is.character)] <- lapply(sample[sapply(sample, is.character)], as.factor)
+#rename the readm_flag as target here, so for other targets we can just change their name to target as well then able to use the following code, and drop other targets
+drops<- c('mortality_90', 'er_90days')
+sample = sample[,!(colnames(sample) %in% drops)]
+sample = sample %>% rename(target = readm_flag)
+```
+
+```{r}
+# ----------------- 
+# Data Preprocessing Function
+# -----------------
+
+# remove bene_state, since it is similar as prvdr_state_ab after we select mode for each hospital
+# not keeping
+cat_name = names(Filter(is.factor, sample))
+
+hospital_3year_mean=sample %>% group_by(clm_admsn_dt_year, prvdr_num, prvdr_state_ab) %>% summarise( total = n(),re_pos = sum(target), re_neg = total - re_pos, across(everything(), mean))
+
+#obtain next year readmission rate per hospital
+next_year_rate = hospital_3year_mean[, c("clm_admsn_dt_year", "prvdr_num", "target")]
+next_year_rate = next_year_rate[!(next_year_rate$clm_admsn_dt_year == 2016), ]
+next_year_rate$clm_admsn_dt_year[(next_year_rate$clm_admsn_dt_year == 2017)] = 2016
+next_year_rate$clm_admsn_dt_year[(next_year_rate$clm_admsn_dt_year == 2018)] = 2017
+next_year_rate = next_year_rate %>% rename(target_next = target)
+
+combine = left_join(hospital_3year_mean, next_year_rate, by = c("prvdr_num", "clm_admsn_dt_year"))
+combine <- combine %>% drop_na(target_next)
+
+
+```
+
+```{r}
+#make sure to cover all state in train, validation, test set
+
+train_valIndex <- createDataPartition(combine$prvdr_state_ab, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+train_val = combine[train_valIndex, ]
+test = combine[-train_valIndex,]
+
+train_index <- createDataPartition(train_val$prvdr_state_ab, p = .8, list = FALSE, times = 1)
+train = train_val[train_index, ]
+val = train_val[-train_index, ]
+
+train_prvdr_num_year = train[, c("prvdr_num","clm_admsn_dt_year")]
+train_prvdr_num_year$prvdr_num_year = paste(train_prvdr_num_year$prvdr_num, train_prvdr_num_year$clm_admsn_dt_year, sep = "_")
+val_prvdr_num_year = val[, c("prvdr_num","clm_admsn_dt_year")]
+val_prvdr_num_year$prvdr_num_year = paste(val_prvdr_num_year$prvdr_num, val_prvdr_num_year$clm_admsn_dt_year, sep = "_")
+test_prvdr_num_year = test[, c("prvdr_num","clm_admsn_dt_year")]
+test_prvdr_num_year$prvdr_num_year = paste(test_prvdr_num_year$prvdr_num, test_prvdr_num_year$clm_admsn_dt_year, sep = "_")
+
+write.csv(train_prvdr_num_year, file = "train_prvdr_num_year.csv")
+write.csv(val_prvdr_num_year, file = "val_prvdr_num_year.csv")
+write.csv(test_prvdr_num_year, file = "test_prvdr_num_year.csv")
+```
+
+```{r}
+
+#target encoding on state
+#target encoding for categorical features (only state left as categorical feature)
+
+addrandom = function(x){
+  return(x + runif(1))
+}
+targetencode = function(indices, df){
+  result = c()
+  df$fake_target = sapply(df$target_next, addrandom)
+  for (i in indices){
+    lookup = df %>% group_by_at(i) %>% summarise(mean(fake_target))
+    result = c(result, lookup)
+  }
+  return(list(result, mean(df$fake_target)))
+}
+
+targetencode_transform = function(indices, result, df, dropna = TRUE, targetmean){
+  j = 1
+  for (i in indices){
+    lookup = data.frame(result[j], result[j+1])
+    cat_colname = colnames(df)[i]
+    df_targetment = left_join(df[cat_colname], lookup, by = cat_colname)
+    df[i] = df_targetment[, 2]
+    j = j +2
+  }
+  if (dropna & sum(is.na(df))){
+    print("There is missing categorical class")
+    t <- colSums(is.na(df))
+    print(t[t!=0])
+    #df = df %>% drop_na()
+    df[is.na(df)] = targetmean
+  }
+  return(df)
+}
+
+cat_index = match("prvdr_state_ab", names(train))
+tgen = targetencode(cat_index, train)
+train = targetencode_transform(cat_index, tgen[[1]], train, targetmean = tgen[[2]])
+val = targetencode_transform(cat_index, tgen[[1]], val, targetmean = tgen[[2]])
+test = targetencode_transform(cat_index, tgen[[1]], test, targetmean = tgen[[2]])
+
+```
+```{r}
+#get the same year and same prvdr_num for population model for train, val, test set.
+sample$prvdr_num_year = paste(sample$prvdr_num, sample$clm_admsn_dt_year, sep = "_")
+train_pop = sample %>% filter(prvdr_num_year %in% train_prvdr_num_year$prvdr_num_year)
+val_pop = sample %>% filter(prvdr_num_year %in% val_prvdr_num_year$prvdr_num_year)
+test_pop = sample %>% filter(prvdr_num_year %in% test_prvdr_num_year$prvdr_num_year)
+
+
+drops = c("prvdr_num_year", "prvdr_num", "clm_admsn_dt_year")
+train_pop_pre =  train_pop[, !(colnames(train_pop) %in% drops)]
+val_pop_pre = val_pop[, !colnames(val_pop) %in% drops]
+test_pop_pre = test_pop[, !colnames(test_pop) %in% drops]
+
+targetencode_pop = function(indices, df){
+  result = c()
+  df$fake_target = sapply(df$target, addrandom) #different target for population model
+  for (i in indices){
+    lookup = df %>% group_by_at(i) %>% summarise(mean(fake_target))
+    result = c(result, lookup)
+  }
+  return(list(result, mean(df$fake_target)))
+}
+
+
+cat_index_pop = match("prvdr_state_ab", names(train_pop_pre))
+tgen_pop = targetencode_pop(cat_index_pop, train_pop_pre)
+train_pop_pre = targetencode_transform(cat_index_pop, tgen_pop[[1]], train_pop_pre, targetmean = tgen_pop[[2]])
+val_pop_pre = targetencode_transform(cat_index_pop, tgen_pop[[1]], val_pop_pre, targetmean = tgen_pop[[2]])
+test_pop_pre = targetencode_transform(cat_index_pop, tgen_pop[[1]], test_pop_pre, targetmean = tgen_pop[[2]])
+
+```
+
+```{r}
+#random foerest only for population model (classification on patient level data)
+
+#change target value to factor and assigned positive class to class1
+train_pop_pre$target =as.factor(train_pop_pre$target) 
+levels(train_pop_pre$target)= c("Class_0", "Class_1")
+train_pop_pre$target <- factor(train_pop_pre$target, levels=rev(levels(train_pop_pre$target)))
+
+set.seed(123)
+rf100_st = Sys.time()
+train_pop_pre_down <- downSample(x = train_pop_pre[, !(colnames(train_pop_pre) %in% c("target"))], y = train_pop_pre$target)
+train_pop_pre_down = train_pop_pre_down %>% rename(target = Class)
+
+cvIndex <- createFolds(train_pop_pre_down$target, 5, returnTrain = T)
+trcontrol = trainControl(index = cvIndex,
+                          method = "cv",
+                          number = 5,
+                          summaryFunction = prSummary,
+                          classProbs = TRUE)
+rf_pop <- train(
+  form = target ~., 
+  data = train_pop_pre_down,
+  trControl= trcontrol,
+  method = 'ranger',
+  metric = "F")
+
+saveRDS(rf_pop, "rf_pop1.Rds")
+d_t = Sys.time() - rf100_st
+print(d_t)
+```
+```{r}
+
+#create own f1 scores to avoid error with the cases when input pred is all 0 or 1 vector
+unbias_f1 = function(pred, yval){
+  f1 = -1
+  if (sum(pred)!= 0 & sum(pred)!= length(pred)){
+    f1 = F1_Score( y_pred = pred, y_true = yval, positive = 1)
+  }else if(sum(pred) == sum(yval)){
+    f1 = 1.1
+  }
+  if(is.na(f1)){
+    f1 = 0
+  }
+  return(f1)
+}
+
+# ----------------- 
+# Prediction function
+# -----------------
+#scoring function returns a list of best Cross_Validation Score, Validation Set F1 scores, Log loss, AUC, and Accuracy with input model, X validation and y validation.
+scoring = function(model, X_val, y_val){
+  pre_class <- ifelse(predict(model, newdata = X_val, type = "raw") == "Class_0",0,1)
+  pre_prob <- predict(model, newdata = X_val, type = "prob")$Class_1
+  return(c(max(model$results$F, na.rm=TRUE), unbias_f1(pre_class, y_val), LogLoss(pre_prob, y_val), AUC(pre_prob, y_val), Accuracy(pre_class, y_val)))
+}
+y_val = val_pop_pre$target
+X_val = val_pop_pre %>% select(-target)
+sc = scoring(rf_pop, X_val, y_val)
+summary_result_rf100 <- data.frame("Type" =c("rf_base_time"), "cv_f1" = c(sc[1]), "val_f1" = c(sc[2]) , 
+                               "logloss" = c(sc[3]), "AUC" = c(sc[4]),
+                               "accuracy" = c(sc[5]), "runtime" = c(d_t), 
+                               "time_unit" = c("mins"), stringsAsFactors = FALSE)
+summary_result_rf100$train_size_o = nrow(train_pop_pre)
+summary_result_rf100$train_size_d = nrow(train_pop_pre_down)
+summary_result_rf100$train_class1 = as.vector(table(train_pop_pre_down$target))[1]
+summary_result_rf100$val_size_d = nrow(X_val)
+summary_result_rf100$val_class1 = as.vector(table(val_pop_pre$target))[2]
+write.csv(x = summary_result_rf100, file = "summary_result_rfpop")
+
+pre_class <- ifelse(predict(rf_pop, newdata = X_val, type = "raw") == "Class_0",0,1)
+val_pop_avg = val_pop
+val_pop_avg$pred_target_next = pre_class
+val_pop_avg = val_pop_avg[, c("prvdr_num", "clm_admsn_dt_year", "target", "pred_target_next")]
+val_pop_avg = val_pop_avg %>% group_by(clm_admsn_dt_year, prvdr_num) %>% summarise(across(everything(), mean))
+
+
+```
+
+```{r}
+
+#drop prvdr_num and some analytic features for training
+#apply normalization / standardization to train x only
+drop = c("prvdr_num", "total", "re_pos", "re_neg", "clm_admsn_dt_year")
+train_y = train["target_next"]
+val_y = val["target_next"]
+test_y = test["target_next"]
+
+train_X = train[,!(colnames(train) %in% c(drop, "target_next"))]
+val_X = val[,!(colnames(val) %in% c(drop, "target_next"))]
+test_X = test[,!(colnames(test) %in% c(drop, "target_next"))]
+
+
+stand = preProcess(train_X, method = c("center", "scale"))
+
+train_Xstand = predict(stand, train_X)
+train_stand = cbind(train_Xstand, train_y)
+train_stand_ntg = train_stand %>% select(-target)
+val_Xstand = predict(stand, val_X)
+val_stand = cbind(val_Xstand, val_y)
+val_stand_ntg = val_stand %>% select(-target)
+test_Xstand= predict(stand, test_X)
+test_stand = cbind(test_Xstand, test_y)
+test_stand_ntg = test_stand %>% select(-target)
+
+
+
+#create c() to store results of the models
+types = c()
+cvRMSEs = c()
+vRMSEs = c()
+vR2 = c()
+
+#base score using population model
+types= c(types, "Population Model")
+cvRMSEs = c(cvRMSEs, NA)
+vRMSEs = c(vRMSEs, RMSE(val_pop_avg$pred_target_next, val$target_next))
+vR2 = c(vR2, R2(val_pop_avg$pred_target_next, val$target_next))
+
+
+#base score using last year rate
+types= c(types, "Last Year Rate")
+cvRMSEs = c(cvRMSEs, NA)
+vRMSEs = c(vRMSEs, RMSE(val$target, val$target_next))
+vR2 = c(vR2, R2(val$target, val$target_next))
+
+
+#base score using train mean
+types= c(types, "Train Mean")
+cvRMSEs = c(cvRMSEs, NA)
+train_mean = mean(train_y$target_next)
+predictions = rep(train_mean, nrow(val))
+vRMSEs = c(vRMSEs, RMSE(predictions, val_range$target_next))
+vR2 = c(vR2,  R2(predictions, val_range$target_next))
+#reference code: http://www.sthda.com/english/articles/37-model-selection-essentials-in-r/153-penalized-regression-essentials-ridge-lasso-elastic-net/#lasso-regression
+
+#RIDGE std
+lambda <- 10^seq(-3, 3, length = 100)
+types= c(types, "Ridge std")
+set.seed(123)
+ridge_std <- train(
+  form = target_next ~., 
+  data = train_stand,
+  method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(alpha = 0, lambda = lambda)
+)
+cvRMSEs = c(cvRMSEs, min(ridge_std$results$RMSE))
+ridge_std_imp = varImp(ridge_std, scale = FALSE)
+predictions <- ridge_std %>% predict(val_stand)
+vRMSEs = c(vRMSEs, RMSE(predictions, val_stand$target_next))
+vR2 = c(vR2,  R2(predictions, val_stand$target_next))
+# LASSO std
+set.seed(123)
+types= c(types, "Lasso std")
+lasso_std <- train(
+  form = target_next ~., 
+  data = train_stand,
+  method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(alpha = 1, lambda = lambda)
+  )
+cvRMSEs = c(cvRMSEs, min(lasso_std$results$RMSE))
+lasso_std_imp = varImp(lasso_std, scale = FALSE)
+predictions <- lasso_std %>% predict(val_stand)
+vRMSEs = c(vRMSEs, RMSE(predictions, val_stand$target_next))
+vR2 = c(vR2,  R2(predictions, val_stand$target_next))
+
+# ELASTIC std
+set.seed(123)
+types= c(types, "Elastic std")
+elastic_std <- train(
+  form = target_next ~., 
+  data = train_stand,
+  method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 10
+  )
+elastic_std_imp = varImp(elastic_std, scale = FALSE)
+cvRMSEs = c(cvRMSEs, min(elastic_std$results$RMSE))
+predictions <- elastic_std %>% predict(val_stand)
+vRMSEs = c(vRMSEs, RMSE(predictions, val_stand$target_next))
+vR2 = c(vR2,  R2(predictions, val_stand$target_next))
+
+
+#RIDGE std no target
+lambda <- 10^seq(-3, 3, length = 100)
+types= c(types, "Ridge std ntg")
+set.seed(123)
+ridge_std_ntg <- train(
+  form = target_next ~., 
+  data = train_stand_ntg,
+  method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(alpha = 0, lambda = lambda)
+)
+cvRMSEs = c(cvRMSEs, min(ridge_std_ntg$results$RMSE))
+ridge_std_ntg_imp = varImp(ridge_std_ntg, scale = FALSE)
+predictions <- ridge_std_ntg %>% predict(val_stand_ntg)
+vRMSEs = c(vRMSEs, RMSE(predictions, val_stand$target_next))
+vR2 = c(vR2,  R2(predictions, val_stand$target_next))
+# LASSO std
+set.seed(123)
+types= c(types, "Lasso std ntg")
+lasso_std_ntg <- train(
+  form = target_next ~., 
+  data = train_stand_ntg,
+  method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(alpha = 1, lambda = lambda)
+  )
+cvRMSEs = c(cvRMSEs, min(lasso_std_ntg$results$RMSE))
+lasso_std_ntg_imp = varImp(lasso_std_ntg, scale = FALSE)
+predictions <- lasso_std_ntg %>% predict(val_stand_ntg)
+vRMSEs = c(vRMSEs, RMSE(predictions, val_stand$target_next))
+vR2 = c(vR2,  R2(predictions, val_stand$target_next))
+
+# ELASTIC std
+set.seed(123)
+types= c(types, "Elastic std ntg")
+elastic_std_ntg <- train(
+  form = target_next ~., 
+  data = train_stand_ntg,
+  method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 10
+  )
+elastic_std_ntg_imp = varImp(elastic_std_ntg, scale = FALSE)
+cvRMSEs = c(cvRMSEs, min(elastic_std$results$RMSE))
+predictions <- elastic_std_ntg %>% predict(val_stand_ntg)
+vRMSEs = c(vRMSEs, RMSE(predictions, val_stand$target_next))
+vR2 = c(vR2,  R2(predictions, val_stand$target_next))
+
+
+# RANDOM FOREST
+types= c(types, "rf std")
+set.seed(123)
+rf <- train(
+      form = target_next ~., 
+      data = train_stand,
+      trControl= trainControl("cv", number = 10, allowParallel = TRUE),
+      method = 'ranger',
+      importance = "permutation")
+cvRMSEs = c(cvRMSEs, min(rf$results$RMSE))
+predictions <- rf %>% predict(val_stand)
+vRMSEs = c(vRMSEs, RMSE(predictions, val_stand$target_next))
+vR2 = c(vR2,  R2(predictions, val_stand$target_next))
+
+
+
+# Xgboost
+
+types= c(types, "xgb std")
+xgb <- train(
+      xgb.DMatrix(as.matrix(train_Xstand)), train_stand$target_next,
+      trControl= trainControl("cv", number = 10, allowParallel = TRUE),
+      method = 'xgbTree',
+      importance = "permutation")
+cvRMSEs = c(cvRMSEs, min(xgb$results$RMSE))
+predictions <- xgb %>% predict(xgb.DMatrix(as.matrix(val_Xstand)))
+vRMSEs = c(vRMSEs, RMSE(predictions, val_stand$target_next))
+vR2 = c(vR2,  R2(predictions, val_stand$target_next))
+result = data.frame("type" = types, "CV_RMSE" = cvRMSEs, "Val_RMSE" = vRMSEs, "Val_R2" = vR2)
+
+
+```
+
+
+```{r}
+#ntg means the train set contain no last year readmission rate
+ggplot(result ,aes(x=reorder(type, Val_RMSE), y=Val_RMSE))+
+  geom_bar(position='dodge',stat='identity', fill = "light blue")+ 
+  xlab('Model')+
+  ylab("Validation RMSE")+
+  ggtitle("Score for Predicting Next Year Readmission Rate")+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0))
+```
+```{r}
+#only keep the result with last year rate for regression model
+
+rm_out = result[c(1:6, 10, 11), ]
+rm_out$Model = c("Population Model", "Last Year Rate", "Train Set Mean", "Ridge", "Lasso", "Elastic", "Random Forest", "XGBoost")
+ggplot(rm_out,aes(x=reorder(Model, Val_RMSE), y=Val_RMSE))+
+  geom_bar(position='dodge',stat='identity', fill = "light blue")+ 
+  xlab('Model')+
+  ylab("Validation RMSE")+
+  ggtitle("Score for Predicting Next Year Readmission Rate")+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0))
+```
+
